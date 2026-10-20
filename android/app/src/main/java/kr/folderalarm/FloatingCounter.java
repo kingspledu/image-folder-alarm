@@ -12,6 +12,7 @@ final class FloatingCounter {
     final Handler main=new Handler(Looper.getMainLooper());
     final WindowManager windows;
     final PreviewOverlay preview;
+    final RepairOverlay repair;
     LinearLayout root;
     TextView label,number,correction;
     String activeBook;
@@ -21,7 +22,7 @@ final class FloatingCounter {
     WindowManager.LayoutParams params;
     boolean destroyed;
     volatile boolean visible;
-    FloatingCounter(Context c){context=c;windows=c.getSystemService(WindowManager.class);preview=new PreviewOverlay(c);}
+    FloatingCounter(Context c){context=c;windows=c.getSystemService(WindowManager.class);preview=new PreviewOverlay(c);repair=new RepairOverlay(c);}
     int dp(int n){return Math.round(n*context.getResources().getDisplayMetrics().density);}
     void show(String book){
         if(destroyed||root!=null||!Settings.canDrawOverlays(context))return;
@@ -51,15 +52,16 @@ final class FloatingCounter {
         Button position=new Button(context);position.setText("위치");position.setContentDescription("캡처 터치 위치 등록");controls.addView(position,new LinearLayout.LayoutParams(dp(64),dp(48)));
         position.setOnClickListener(v->TapTarget.show(context));
         LinearLayout tools=new LinearLayout(context);
-        Button latest=new Button(context);latest.setText("마지막 이미지 / 삭제");latest.setTextSize(12);tools.addView(latest,new LinearLayout.LayoutParams(-1,dp(44)));root.addView(tools);
+        Button latest=new Button(context);latest.setText("마지막 이미지 / 삭제");latest.setTextSize(12);tools.addView(latest,new LinearLayout.LayoutParams(0,dp(44),1));root.addView(tools);
         latest.setOnClickListener(v->preview.show(book));
+        Button repairButton=new Button(context);repairButton.setText("중복 / 구간 보정");repairButton.setTextSize(11);tools.addView(repairButton,new LinearLayout.LayoutParams(0,dp(44),1));repairButton.setOnClickListener(v->repair.show(book));
         LinearLayout adjust=new LinearLayout(context);root.addView(adjust);
         adjustmentButton(adjust,"−1",()->shiftOffset(-1));
         adjustmentButton(adjust,"표시 보정",()->editOffset());
         adjustmentButton(adjust,"+1",()->shiftOffset(1));
         TextView close=new TextView(context);close.setText("×");close.setTextColor(0xffc4d8c8);close.setTextSize(23);close.setGravity(Gravity.CENTER);close.setContentDescription("번호창 닫기. 감시는 계속됩니다");
         controls.addView(close,new LinearLayout.LayoutParams(dp(44),dp(44)));
-        close.setOnClickListener(v->{preview.close();context.getSharedPreferences("watch",0).edit().putBoolean("floating",false).apply();hide();});
+        close.setOnClickListener(v->{repair.close();preview.close();context.getSharedPreferences("watch",0).edit().putBoolean("floating",false).apply();hide();});
         params=new WindowManager.LayoutParams(WindowManager.LayoutParams.WRAP_CONTENT,WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,PixelFormat.TRANSLUCENT);
         params.gravity=Gravity.TOP|Gravity.LEFT;
@@ -97,7 +99,7 @@ final class FloatingCounter {
         if(root==null)return;
         int delta=offset();
         number.setText(String.format(java.util.Locale.ROOT,"%03d",DisplayNumber.value(actualNumber,delta))+(pendingNow>0?" · 정리 중":""));
-        correction.setText("실제 "+actualNumber+" · 보정 "+(delta>=0?"+":"")+delta);
+        correction.setText("실제 "+actualNumber+" · 보정 "+(delta>=0?"+":"")+delta+CaptureRepair.label(context));
     }
     void saveOffset(int value){context.getSharedPreferences("watch",0).edit().putInt("displayOffset:"+activeBook,value).apply();renderNumber();}
     void shiftOffset(int direction){
@@ -119,5 +121,5 @@ final class FloatingCounter {
     }
     void closeAdjustment(){if(adjustmentPanel!=null){context.getSystemService(android.view.inputmethod.InputMethodManager.class).hideSoftInputFromWindow(adjustmentPanel.getWindowToken(),0);try{windows.removeView(adjustmentPanel);}catch(RuntimeException ignored){}adjustmentPanel=null;}}
     void hide(){closeAdjustment();visible=false;if(root!=null){try{windows.removeView(root);}catch(RuntimeException ignored){}root=null;}}
-    void destroy(){preview.close();TapTarget.close();destroyed=true;main.removeCallbacksAndMessages(null);hide();}
+    void destroy(){repair.close();preview.close();TapTarget.close();destroyed=true;main.removeCallbacksAndMessages(null);hide();}
 }

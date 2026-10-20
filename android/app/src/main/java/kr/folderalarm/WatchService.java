@@ -26,13 +26,15 @@ public class WatchService extends Service {
     final Map<String, Long> sizes = new HashMap<>();
     final Set<String> pending = new HashSet<>();
     final Map<String,String> reserved=new HashMap<>();
+    final Map<String,Long> captureOrder=new HashMap<>();
+    long captureClock;
     final Map<String,Long> stableSince=new HashMap<>();
     android.database.ContentObserver observer;
     final java.util.concurrent.atomic.AtomicBoolean queued=new java.util.concurrent.atomic.AtomicBoolean();
     int previous;
     volatile boolean stopping;
     String treeString;
-    static class Image { String id, name; long size; int flags; Image(String i, String n, long s, int f) { id=i; name=n; size=s; flags=f; } }
+    static class Image { String id, name; long size,modified; int flags; Image(String i, String n, long s, int f,long m) { id=i; name=n; size=s; flags=f;modified=m; } }
     Notification.Builder note(String channel, String title, String text) {
 
         return new Notification.Builder(this, channel).setSmallIcon(android.R.drawable.ic_menu_gallery).setContentTitle(title).setContentText(text);
@@ -65,17 +67,17 @@ public class WatchService extends Service {
     List<Image> list(Uri tree) throws Exception {
         List<Image> result=new ArrayList<>();
         String[] columns={DocumentsContract.Document.COLUMN_DOCUMENT_ID,DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-            DocumentsContract.Document.COLUMN_MIME_TYPE,DocumentsContract.Document.COLUMN_SIZE,DocumentsContract.Document.COLUMN_FLAGS};
+            DocumentsContract.Document.COLUMN_MIME_TYPE,DocumentsContract.Document.COLUMN_SIZE,DocumentsContract.Document.COLUMN_FLAGS,DocumentsContract.Document.COLUMN_LAST_MODIFIED};
         Uri children=DocumentsContract.buildChildDocumentsUriUsingTree(tree,DocumentsContract.getTreeDocumentId(tree));
         try(Cursor c=getContentResolver().query(children,columns,null,null,null)) {
             if(c==null) throw new IllegalStateException("폴더를 읽지 못했습니다");
             while(c.moveToNext()) {
                 String name=c.getString(1),mime=c.getString(2);
                 if(mime!=null && mime.startsWith("image/") || !DocumentsContract.Document.MIME_TYPE_DIR.equals(mime) && name!=null && name.toLowerCase(Locale.ROOT).matches(".*\\.(png|jpe?g|webp|gif|bmp|heic|heif|avif)$"))
-                    result.add(new Image(c.getString(0),name,c.isNull(3)?-1:c.getLong(3),c.getInt(4)));
+                    result.add(new Image(c.getString(0),name,c.isNull(3)?-1:c.getLong(3),c.getInt(4),c.isNull(5)?0:c.getLong(5)));
             }
         }
-        result.sort(Comparator.comparing(i -> i.name)); return result;
+        result.sort(Comparator.comparingLong((Image i)->i.modified).thenComparing(i->i.name)); return result;
     }
     void requestScan(){
         ScheduledExecutorService executor=worker;
@@ -90,10 +92,11 @@ public class WatchService extends Service {
             for(Image image:images) { ids.add(image.id); names.add(image.name); }
             if(known==null) { known=ids; previous=images.size(); updateFloating(names,0); status("감시 시작 · 기존 이미지 "+previous+"장은 유지"); return; }
             int added=Math.max(0,images.size()-previous), renamed=0, failures=0;
-            pending.retainAll(ids); sizes.keySet().retainAll(ids);reserved.keySet().retainAll(ids);stableSince.keySet().retainAll(ids);
+            pending.retainAll(ids); sizes.keySet().retainAll(ids);reserved.keySet().retainAll(ids);stableSince.keySet().retainAll(ids);captureOrder.keySet().retainAll(ids);
             Set<String> occupied=new HashSet<>(names);occupied.addAll(reserved.values());
             for(Image image:images) if(!known.contains(image.id)&&pending.add(image.id)){
-                String target=NamePolicy.next(bookName,image.name,occupied);reserved.put(image.id,target);occupied.add(target);
+                captureClock=Math.max(captureClock+1,System.currentTimeMillis()*1000);captureOrder.put(image.id,captureClock);
+                String target=CaptureRepair.active(this,treeString,bookName)?CaptureRepair.stagedName(image.name):NamePolicy.next(bookName,image.name,occupied);reserved.put(image.id,target);occupied.add(target);
             }
             // Publish allocated numbers before waiting for file stability or provider rename calls.
             Set<String> visibleNames=new HashSet<>(names);visibleNames.addAll(reserved.values());updateFloating(visibleNames,pending.size());
@@ -112,11 +115,13 @@ public class WatchService extends Service {
                         Set<String> taken=new HashSet<>(names);taken.addAll(reserved.values());next=NamePolicy.next(bookName,image.name,taken);reserved.put(image.id,next);
                     }
                     Uri old=DocumentsContract.buildDocumentUriUsingTree(tree,image.id);
-                    Uri updated=DocumentsContract.renameDocument(getContentResolver(),old,next);
+                    Uri updated;
+                    if(CaptureRepair.active(this,treeString,bookName))updated=CaptureRepair.stage(this,old,CaptureRepair.stagedName(image.name),captureOrder.getOrDefault(image.id,0L));
+                    else updated=DocumentsContract.renameDocument(getContentResolver(),old,next);
                     if(updated==null) throw new IllegalStateException("이름 변경 실패");
-                    ids.remove(image.id); ids.add(DocumentsContract.getDocumentId(updated)); names.add(next); renamed++;
+                    ids.remove(image.id); ids.add(DocumentsContract.getDocumentId(updated)); if(!CaptureRepair.active(this,treeString,bookName))names.add(next); renamed++;
                 } catch(Exception e) { failures++; }
-                pending.remove(image.id); sizes.remove(image.id);reserved.remove(image.id);stableSince.remove(image.id);
+                pending.remove(image.id); sizes.remove(image.id);reserved.remove(image.id);stableSince.remove(image.id);captureOrder.remove(image.id);
             }
             known=ids;previous=images.size();
             visibleNames=new HashSet<>(names);visibleNames.addAll(reserved.values());updateFloating(visibleNames,pending.size());
@@ -133,6 +138,14 @@ public class WatchService extends Service {
             status("폴더 접근 오류 · 다시 선택하세요");
             manager.notify(3,note("images","감시 중단","폴더 접근 권한을 확인하고 다시 시작하세요").build()); stopSelf();
         }
+    }
+    void resetBaseline()throws Exception{
+        List<Image> current=list(Uri.parse(treeString));Set<String> ids=new HashSet<>(),names=new HashSet<>();
+        for(Image i:current){
+            if(NamePolicy.number(bookName,i.name)>0||i.name.startsWith("__backup_")||i.name.startsWith("__recap_")||i.name.startsWith("__restore_")||known!=null&&known.contains(i.id)&&!pending.contains(i.id))ids.add(i.id);
+            names.add(i.name);
+        }
+        known=ids;previous=current.size();pending.clear();reserved.clear();sizes.clear();stableSince.clear();captureOrder.clear();updateFloating(names,0);
     }
     void syncFloating(){
         if(floatingCounter==null)floatingCounter=new FloatingCounter(this);
