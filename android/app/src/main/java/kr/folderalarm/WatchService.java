@@ -12,6 +12,9 @@ import java.util.concurrent.*;
 public class WatchService extends Service {
     static final Object FILE_LOCK=new Object();
     static volatile boolean running;
+    static WatchService live;
+    static long displayNumber(){return live==null?0:live.lastNumber;}
+    static int displayPending(){return live==null?0:live.pendingNumber;}
     String bookName;
     FloatingCounter floatingCounter;
     volatile long lastNumber;
@@ -49,7 +52,7 @@ public class WatchService extends Service {
         PendingIntent stop=PendingIntent.getService(this,1,new Intent(this,WatchService.class).setAction("stop"),PendingIntent.FLAG_IMMUTABLE);
         startForeground(1,note("watch","폴더 감시 및 자동 이름 변경 중","새 이미지에 책 이름과 순번을 붙입니다")
             .setOngoing(true).addAction(new Notification.Action.Builder(null,"중지",stop).build()).build());
-        running=true;
+        running=true;live=this;
         syncFloating();
         worker=Executors.newSingleThreadScheduledExecutor(); worker.scheduleWithFixedDelay(this::scan,0,200,TimeUnit.MILLISECONDS);
         observer=new android.database.ContentObserver(null){public void onChange(boolean selfChange){requestScan();}};
@@ -143,6 +146,6 @@ public class WatchService extends Service {
         FloatingCounter counter=floatingCounter;if(counter!=null)counter.update(max,waiting);
     }
     void status(String text) { if(!stopping)prefs.edit().putString("status",text).apply(); }
-    public void onDestroy() { stopping=true;if(observer!=null)getContentResolver().unregisterContentObserver(observer);if(floatingCounter!=null)floatingCounter.destroy();running=false;if(worker!=null)worker.shutdownNow();prefs.edit().putString("status","감시 중지").apply();super.onDestroy(); }
+    public void onDestroy() { stopping=true;live=null;if(observer!=null)getContentResolver().unregisterContentObserver(observer);if(floatingCounter!=null)floatingCounter.destroy();running=false;if(worker!=null)worker.shutdownNow();prefs.edit().putString("status","감시 중지").apply();super.onDestroy(); }
     public IBinder onBind(Intent intent) { return null; }
 }

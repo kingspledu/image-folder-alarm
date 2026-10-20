@@ -26,6 +26,22 @@ final class FloatingCounter {
         label=new TextView(context);label.setText(book);label.setTextColor(0xffc4d8c8);label.setTextSize(10);label.setMaxWidth(dp(130));label.setSingleLine(true);label.setEllipsize(android.text.TextUtils.TruncateAt.END);
         number=new TextView(context);number.setText("준비 중");number.setTextColor(Color.WHITE);number.setTextSize(22);number.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
         content.addView(label);content.addView(number);root.addView(content);
+        Button capture=new Button(context);capture.setText("캡처");capture.setContentDescription("등록된 밀리 캡처 버튼 한 번 누르기");
+        root.addView(capture,new LinearLayout.LayoutParams(dp(72),dp(48)));
+        capture.setOnClickListener(v->{
+            if(!MillieClickService.ready()){MillieClickService.message(context,"앱에서 밀리 캡처 접근성을 먼저 켜세요");return;}
+            hide();
+            main.postDelayed(()->{
+                if(destroyed)return;
+                MillieClickService.press(context,()->main.postDelayed(()->{
+                    if(!destroyed&&context.getSharedPreferences("watch",0).getBoolean("floating",true)){
+                        show(book);update(WatchService.displayNumber(),WatchService.displayPending());
+                    }
+                },160));
+            },80);
+        });
+        Button position=new Button(context);position.setText("위치");position.setContentDescription("캡처 터치 위치 등록");root.addView(position,new LinearLayout.LayoutParams(dp(64),dp(48)));
+        position.setOnClickListener(v->TapTarget.show(context));
         TextView close=new TextView(context);close.setText("×");close.setTextColor(0xffc4d8c8);close.setTextSize(23);close.setGravity(Gravity.CENTER);close.setContentDescription("번호창 닫기. 감시는 계속됩니다");
         root.addView(close,new LinearLayout.LayoutParams(dp(44),dp(44)));
         close.setOnClickListener(v->{context.getSharedPreferences("watch",0).edit().putBoolean("floating",false).apply();hide();});
@@ -61,5 +77,5 @@ final class FloatingCounter {
         number.setText(String.format(java.util.Locale.ROOT,"%03d",last)+(pending>0?" · 정리 중":""));
     });}
     void hide(){visible=false;if(root!=null){try{windows.removeView(root);}catch(RuntimeException ignored){}root=null;}}
-    void destroy(){destroyed=true;main.removeCallbacksAndMessages(null);hide();}
+    void destroy(){TapTarget.close();destroyed=true;main.removeCallbacksAndMessages(null);hide();}
 }

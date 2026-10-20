@@ -11,5 +11,9 @@
         <service android:name=".WatchService" android:exported="false" android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User-started monitoring and renaming of newly added images in a user-selected folder until explicitly stopped"/>
         </service>
+        <service android:name=".MillieClickService" android:label="@string/click_label" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true">
+            <intent-filter><action android:name="android.accessibilityservice.AccessibilityService"/></intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/millie_accessibility"/>
+        </service>
     </application>
 </manifest>
