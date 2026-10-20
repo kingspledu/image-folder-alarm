@@ -31,8 +31,8 @@ public class WatchService extends Service {
     String treeString;
     static class Image { String id, name; long size; int flags; Image(String i, String n, long s, int f) { id=i; name=n; size=s; flags=f; } }
     Notification.Builder note(String channel, String title, String text) {
-        PendingIntent open = PendingIntent.getActivity(this, 0, new Intent(this, MainActivity.class), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-        return new Notification.Builder(this, channel).setSmallIcon(android.R.drawable.ic_menu_gallery).setContentTitle(title).setContentText(text).setContentIntent(open);
+
+        return new Notification.Builder(this, channel).setSmallIcon(android.R.drawable.ic_menu_gallery).setContentTitle(title).setContentText(text);
     }
     public void onCreate() {
         super.onCreate(); prefs=getSharedPreferences("watch",0); manager=getSystemService(NotificationManager.class);
