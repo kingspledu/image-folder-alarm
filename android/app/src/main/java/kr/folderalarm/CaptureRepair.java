@@ -19,7 +19,7 @@ final class CaptureRepair {
             if(folder.equals(existing.optString("folder"))&&book.equals(existing.optString("book"))){existing.put("active",true);saveSession(c,existing);return;}
             throw new IllegalStateException("기존 재캡처 묶음을 먼저 분석하거나 취소·보관하세요");
         }
-        JSONObject s=new JSONObject().put("folder",folder).put("book",book).put("active",true).put("shots",new JSONArray());saveSession(c,s);
+        JSONObject s=new JSONObject().put("folder",folder).put("book",book).put("active",true).put("startPage",PageStart.selected(c,folder,book)).put("shots",new JSONArray());saveSession(c,s);
     }
     static void saveSession(Context c,JSONObject s)throws Exception{if(!prefs(c).edit().putString("repairSession",s.toString()).commit())throw new java.io.IOException("보정 기록 저장 실패");}
     static Uri stage(Context c,Uri uri,String name,long order)throws Exception{
@@ -42,28 +42,40 @@ final class CaptureRepair {
         s.put("active",false);saveSession(c,s);List<RepairPlan.Page> shots=new ArrayList<>();JSONArray array=s.getJSONArray("shots");
         List<JSONObject> ordered=new ArrayList<>();for(int i=0;i<array.length();i++)ordered.add(array.getJSONObject(i));ordered.sort(Comparator.comparingLong(a->a.optLong("order",0)));
         for(JSONObject a:ordered)shots.add(new RepairPlan.Page(a.getString("uri"),a.getString("name"),ImageFingerprint.hash(c,Uri.parse(a.getString("uri")))));
+        long start=s.optLong("startPage",0);
+        if(start>0){Map<String,Long> trusted=new HashMap<>();JSONObject saved=new JSONObject(prefs(c).getString("pageAnchors:"+folder+":"+book,"{}"));Iterator<String> keys=saved.keys();while(keys.hasNext()){String key=keys.next();trusted.put(key,saved.getLong(key));}return RepairPlan.anchored(bookPages(c,folder,book),shots,book,start,trusted);}
         return RepairPlan.align(bookPages(c,folder,book),shots);
     }
-    static void cancel(Context c){prefs(c).edit().remove("repairSession").commit();}
-    static String target(String book,int number,String original){int dot=original.lastIndexOf('.');return book+"_"+String.format(Locale.ROOT,"%03d",number)+(dot<0?".png":original.substring(dot));}
+    static void cancel(Context c){JSONObject s=session(c);prefs(c).edit().remove(PageStart.key(s.optString("folder"),s.optString("book"))).remove("repairSession").commit();}
+    static String target(String book,long number,String original){int dot=original.lastIndexOf('.');return book+"_"+String.format(Locale.ROOT,"%03d",number)+(dot<0?".png":original.substring(dot));}
     static void journal(Context c,JSONArray records)throws Exception{if(!prefs(c).edit().putString("repairJournal",records.toString()).commit())throw new java.io.IOException("복구 기록 저장 실패");}
     static String rename(Context c,String uri,String name)throws Exception{Uri next=DocumentsContract.renameDocument(c.getContentResolver(),Uri.parse(uri),name);if(next==null)throw new java.io.IOException("이름 변경 실패");return next.toString();}
     static void rebaseline()throws Exception{if(WatchService.live!=null)WatchService.live.resetBaseline();}
     static void apply(Context c,String folder,String book,RepairPlan plan)throws Exception{
         if(!prefs(c).getString("repairJournal","").isEmpty())throw new IllegalStateException("중단된 적용을 먼저 복구하세요");
+        if(!plan.staged.isEmpty()){
+            JSONObject s=session(c);JSONArray current=s.optJSONArray("shots");
+            if(s.optBoolean("active")||current==null||current.length()!=plan.staged.size())throw new IllegalStateException("분석 후 새 캡처가 추가되었습니다. 다시 종료·분석하세요");
+        }
         List<RepairPlan.Page> fresh=bookPages(c,folder,book);if(fresh.size()!=plan.before.size())throw new IllegalStateException("기존 파일이 달라졌습니다. 다시 분석하세요");
         for(int i=0;i<fresh.size();i++){RepairPlan.Page a=fresh.get(i),b=plan.before.get(i);if(!a.uri.equals(b.uri)||!a.hash.equals(b.hash)||!a.name.equals(b.name))throw new IllegalStateException("기존 파일이 달라졌습니다. 다시 분석하세요");}
         for(RepairPlan.Page page:plan.staged)if(!ImageFingerprint.hash(c,Uri.parse(page.uri)).equals(page.hash))throw new IllegalStateException("재캡처 파일이 달라졌습니다");
-        Map<String,String> desired=new HashMap<>();for(int i=0;i<plan.after.size();i++){RepairPlan.Page p=plan.after.get(i);desired.put(p.uri,target(book,i+1,p.name));}
+        Map<String,String> desired=new HashMap<>();for(int i=0;i<plan.after.size();i++){RepairPlan.Page p=plan.after.get(i);desired.put(p.uri,target(book,plan.numbers.get(i),p.name));}
         List<RepairPlan.Page> all=new ArrayList<>(plan.before);all.addAll(plan.staged);JSONArray records=new JSONArray();Set<String> included=new HashSet<>();String tag=UUID.randomUUID().toString().substring(0,8);
         for(RepairPlan.Page p:all){if(!included.add(p.uri)||p.name.equals(desired.get(p.uri)))continue;records.put(new JSONObject().put("uri",p.uri).put("before",p.name).put("current",p.name).put("hash",p.hash).put("temporary","__backup_"+tag+"_"+records.length()+"_"+p.name).put("desired",desired.containsKey(p.uri)?desired.get(p.uri):""));}
-        if(!prefs(c).edit().putString("repairJournalFolder",folder).commit())throw new java.io.IOException("복구 폴더 기록 저장 실패");
+        JSONObject metadata=new JSONObject().put("anchorKey","pageAnchors:"+folder+":"+book).put("anchorValue",prefs(c).getString("pageAnchors:"+folder+":"+book,"{}")).put("cursorKey",PageStart.key(folder,book)).put("cursorValue",PageStart.selected(c,folder,book)).put("session",prefs(c).getString("repairSession",""));
+        if(!prefs(c).edit().putString("repairJournalMeta",metadata.toString()).putString("repairJournalFolder",folder).commit())throw new java.io.IOException("복구 폴더 기록 저장 실패");
         journal(c,records);
         try{
             Set<String> names=new HashSet<>();for(Doc d:docs(c,folder))names.add(d.name);
             for(int i=0;i<records.length();i++){JSONObject record=records.getJSONObject(i);move(c,record,record.getString("temporary"),names);journal(c,records);}
             for(int i=0;i<records.length();i++){JSONObject record=records.getJSONObject(i);if(!record.getString("desired").isEmpty()){move(c,record,record.getString("desired"),names);journal(c,records);}}
-            prefs(c).edit().putString("lastRepairJournal",records.toString()).remove("repairJournal").remove("repairSession").commit();rebaseline();
+            SharedPreferences.Editor edit=prefs(c).edit().putString("lastRepairJournal",records.toString()).remove("repairJournal").remove("repairSession");
+            if(!plan.anchors.isEmpty()){
+                String key="pageAnchors:"+folder+":"+book;JSONObject saved=new JSONObject(prefs(c).getString(key,"{}"));long last=0;
+                for(Map.Entry<String,Long> entry:plan.anchors.entrySet()){saved.put(entry.getKey(),entry.getValue());last=Math.max(last,entry.getValue());}edit.putString(key,saved.toString()).putLong(PageStart.key(folder,book),last+1);
+            }
+            rebaseline();if(!edit.remove("repairJournalMeta").commit())throw new java.io.IOException("페이지 기준 저장 실패");
         }catch(Exception e){try{rollback(c,folder,records);}catch(Exception recovery){throw new java.io.IOException("적용 중단. 파일은 보존되어 있습니다. ‘중단 복구’를 누르세요: "+recovery.getMessage());}throw e;}
     }
     static void move(Context c,JSONObject record,String name,Set<String> names)throws Exception{
@@ -86,7 +98,13 @@ final class CaptureRepair {
         String tag=UUID.randomUUID().toString();
         for(int i=0;i<records.length();i++){move(c,records.getJSONObject(i),"__restore_"+tag+"_"+i,names);journal(c,records);}
         for(int i=0;i<records.length();i++){move(c,records.getJSONObject(i),records.getJSONObject(i).getString("before"),names);journal(c,records);}
-        prefs(c).edit().remove("repairJournal").commit();rebaseline();
+        SharedPreferences.Editor undo=prefs(c).edit().remove("repairJournal").remove("repairJournalMeta");
+        String text=prefs(c).getString("repairJournalMeta","");if(!text.isEmpty()){
+            JSONObject metadata=new JSONObject(text);undo.putString(metadata.getString("anchorKey"),metadata.getString("anchorValue"));
+            if(metadata.optLong("cursorValue",0)>0)undo.putLong(metadata.getString("cursorKey"),metadata.getLong("cursorValue"));else undo.remove(metadata.getString("cursorKey"));
+            if(metadata.optString("session").isEmpty())undo.remove("repairSession");else undo.putString("repairSession",metadata.getString("session"));
+        }
+        if(!undo.commit())throw new java.io.IOException("페이지 기준 복구 기록 저장 실패");rebaseline();
     }
     static void recover(Context c,String folder)throws Exception{String text=prefs(c).getString("repairJournal","");if(text.isEmpty())throw new IllegalStateException("중단된 적용 기록이 없습니다");rollback(c,folder,new JSONArray(text));}
 }

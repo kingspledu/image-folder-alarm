@@ -95,6 +95,7 @@ public class WatchService extends Service {
             pending.retainAll(ids); sizes.keySet().retainAll(ids);reserved.keySet().retainAll(ids);stableSince.keySet().retainAll(ids);captureOrder.keySet().retainAll(ids);
             Set<String> occupied=new HashSet<>(names);occupied.addAll(reserved.values());
             for(Image image:images) if(!known.contains(image.id)&&pending.add(image.id)){
+                if(PageStart.selected(this,treeString,bookName)>0&&!CaptureRepair.active(this,treeString,bookName))CaptureRepair.begin(this,treeString,bookName);
                 captureClock=Math.max(captureClock+1,System.currentTimeMillis()*1000);captureOrder.put(image.id,captureClock);
                 String target=CaptureRepair.active(this,treeString,bookName)?CaptureRepair.stagedName(image.name):NamePolicy.next(bookName,image.name,occupied);reserved.put(image.id,target);occupied.add(target);
             }

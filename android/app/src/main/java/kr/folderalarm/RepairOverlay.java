@@ -23,7 +23,7 @@ final class RepairOverlay {
         book=selectedBook;folder=CaptureRepair.prefs(context).getString("uri","");if(folder.isEmpty())return;plan=null;generation++;
         panel=new LinearLayout(context);panel.setOrientation(1);panel.setPadding(dp(12),dp(8),dp(12),dp(8));panel.setBackgroundColor(0xfff2f5ee);
         TextView title=new TextView(context);title.setText("중복 검사 / 겹치는 구간 재캡처");title.setTextColor(0xff20392e);title.setTextSize(16);panel.addView(title);
-        status=new TextView(context);status.setTextColor(0xff20392e);status.setTextSize(12);status.setText("재캡처 시작 → 빠진 구간 앞뒤의 기존 페이지까지 순서대로 겹쳐 캡처 → 종료·분석 → 제안 확인 후 적용\n밀리 페이지 숫자를 읽는 기능은 아닙니다. 같은 화면 크기로 캡처하세요.\n"+CaptureRepair.label(context));
+        status=new TextView(context);status.setTextColor(0xff20392e);status.setTextSize(12);status.setText("재캡처 시작 → 빠진 구간 앞뒤의 기존 페이지까지 순서대로 겹쳐 캡처 → 종료·분석 → 제안 확인 후 적용\n상주창의 시작 페이지를 지정하면 실제 페이지 기준과 중복을 함께 분석합니다. 페이지 숫자를 읽는 기능은 아닙니다. 같은 화면 크기로 캡처하세요.\n"+CaptureRepair.label(context));
         ScrollView scroll=new ScrollView(context);scroll.addView(status);panel.addView(scroll,new LinearLayout.LayoutParams(-1,dp(130)));
         LinearLayout first=row();button(first,"재캡처 시작/추가",()->work(0));button(first,"종료·분석",()->work(1));
         LinearLayout second=row();button(second,"기존 중복 검사",()->work(2));button(second,"취소·파일보관",()->work(3));
@@ -45,7 +45,7 @@ final class RepairOverlay {
                 if(action!=3&&action!=5&&watch!=null&&!watch.pending.isEmpty())throw new IllegalStateException("새 이미지 정리 중입니다. 잠시 기다린 뒤 다시 누르세요");
                 if(action==0){if(watch==null||watch.known==null)throw new IllegalStateException("감시를 시작하고 준비가 끝난 뒤 다시 누르세요");CaptureRepair.begin(context,folder,book);plan=null;message="재캡처 시작. 기존 앞쪽 페이지부터 빠진 구간을 지나 기존 뒤쪽 페이지까지 순서대로 캡처하세요.";}
                 else if(action==1){plan=CaptureRepair.finish(context,folder,book);message=plan.summary;}
-                else if(action==2){if(!CaptureRepair.session(context).optString("folder").isEmpty())throw new IllegalStateException("재캡처 묶음을 적용하거나 취소·보관한 뒤 기존 중복 검사하세요");plan=RepairPlan.dedupe(CaptureRepair.bookPages(context,folder,book));message=plan.summary;}
+                else if(action==2){if(!CaptureRepair.session(context).optString("folder").isEmpty())throw new IllegalStateException("재캡처 묶음을 적용하거나 취소·보관한 뒤 기존 중복 검사하세요");plan=RepairPlan.dedupe(CaptureRepair.bookPages(context,folder,book),book);message=plan.summary;}
                 else if(action==3){CaptureRepair.cancel(context);plan=null;message="재캡처를 취소했습니다. 이미 받은 __recap_ 파일은 삭제하지 않고 남겼습니다.";}
                 else if(action==4){if(plan==null)throw new IllegalStateException("먼저 분석하세요");CaptureRepair.apply(context,folder,book,plan);plan=null;message="보정 완료. 중복·교체 원본은 __backup_ 파일로 보관했습니다. 다음 캡처를 진행하세요.";}
                 else {CaptureRepair.recover(context,folder);plan=null;message="중단된 작업의 파일명을 복구했습니다.";}
@@ -54,7 +54,7 @@ final class RepairOverlay {
         });
     }
     void thumbnail(){
-        if(plan==null||plan.after.isEmpty())return;final RepairPlan.Page page=plan.after.get(index);final int token=generation;final int which=index;caption.setText("적용 후 "+(index+1)+" / "+plan.after.size()+" · "+(page.name.startsWith("__recap_")?"재캡처 이미지":page.name));
+        if(plan==null||plan.after.isEmpty())return;final RepairPlan.Page page=plan.after.get(index);final int token=generation;final int which=index;caption.setText("적용 후 "+plan.numbers.get(index)+"페이지 · 총 "+plan.after.size()+"장"+" · "+(page.name.startsWith("__recap_")?"재캡처 이미지":page.name));
         IO.execute(()->{Bitmap decoded=null;try{BitmapFactory.Options b=new BitmapFactory.Options();b.inJustDecodeBounds=true;try(InputStream in=context.getContentResolver().openInputStream(android.net.Uri.parse(page.uri))){BitmapFactory.decodeStream(in,null,b);}b.inJustDecodeBounds=false;b.inSampleSize=1;while(b.outWidth/b.inSampleSize>900||b.outHeight/b.inSampleSize>900)b.inSampleSize*=2;try(InputStream in=context.getContentResolver().openInputStream(android.net.Uri.parse(page.uri))){decoded=BitmapFactory.decodeStream(in,null,b);}}catch(Exception ignored){}final Bitmap picture=decoded;main.post(()->{if(panel==null||token!=generation||which!=index){if(picture!=null)picture.recycle();return;}clearImage();bitmap=picture;image.setImageBitmap(picture);});});
     }
     void clearImage(){if(image!=null)image.setImageDrawable(null);if(bitmap!=null){bitmap.recycle();bitmap=null;}}

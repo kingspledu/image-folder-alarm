@@ -57,7 +57,7 @@ final class FloatingCounter {
         Button repairButton=new Button(context);repairButton.setText("중복 / 구간 보정");repairButton.setTextSize(11);tools.addView(repairButton,new LinearLayout.LayoutParams(0,dp(44),1));repairButton.setOnClickListener(v->repair.show(book));
         LinearLayout adjust=new LinearLayout(context);root.addView(adjust);
         adjustmentButton(adjust,"−1",()->shiftOffset(-1));
-        adjustmentButton(adjust,"표시 보정",()->editOffset());
+        adjustmentButton(adjust,"시작 페이지",()->editOffset());
         adjustmentButton(adjust,"+1",()->shiftOffset(1));
         TextView close=new TextView(context);close.setText("×");close.setTextColor(0xffc4d8c8);close.setTextSize(23);close.setGravity(Gravity.CENTER);close.setContentDescription("번호창 닫기. 감시는 계속됩니다");
         controls.addView(close,new LinearLayout.LayoutParams(dp(44),dp(44)));
@@ -89,35 +89,43 @@ final class FloatingCounter {
         });
         try{windows.addView(root,params);visible=true;renderNumber();}catch(RuntimeException e){root=null;Toast.makeText(context,"번호창을 표시하지 못했습니다. 다른 앱 위에 표시 권한을 확인하세요",Toast.LENGTH_LONG).show();}
     }
-    void update(long last,int pending){main.post(()->{
+    void update(long last,int pending){final long page=PageStart.shown(context,pageFolder(),activeBook,last,pending);main.post(()->{
         if(destroyed||root==null)return;
         preview.changed(last,pending);
-        actualNumber=last;pendingNow=pending;renderNumber();
+        actualNumber=last;pendingNow=pending;renderNumber(page);
     });}
-    int offset(){return context.getSharedPreferences("watch",0).getInt("displayOffset:"+activeBook,0);}
-    void renderNumber(){
+    String pageFolder(){return context.getSharedPreferences("watch",0).getString("uri","");}
+    long shownPage(){return PageStart.shown(context,pageFolder(),activeBook,actualNumber,pendingNow);}
+    void renderNumber(){renderNumber(shownPage());}
+    void renderNumber(long page){
         if(root==null)return;
-        int delta=offset();
-        number.setText(String.format(java.util.Locale.ROOT,"%03d",DisplayNumber.value(actualNumber,delta))+(pendingNow>0?" · 정리 중":""));
-        correction.setText("실제 "+actualNumber+" · 보정 "+(delta>=0?"+":"")+delta+CaptureRepair.label(context));
+        number.setText("다음 "+String.format(java.util.Locale.ROOT,"%03d",page)+(pendingNow>0?" · 정리 중":""));
+        number.setMaxWidth(dp(145));
+        correction.setText("저장 끝 번호 "+actualNumber+CaptureRepair.label(context));
     }
-    void saveOffset(int value){context.getSharedPreferences("watch",0).edit().putInt("displayOffset:"+activeBook,value).apply();renderNumber();}
-    void shiftOffset(int direction){
-        int current=offset();if(direction>0&&current==Integer.MAX_VALUE||direction<0&&current==Integer.MIN_VALUE)return;saveOffset(current+direction);
+    void changePage(long value,boolean reset){
+        final String folder=pageFolder(),book=activeBook;
+        RepairOverlay.IO.execute(()->{
+            String message;
+            try{synchronized(WatchService.FILE_LOCK){if(reset)PageStart.clear(context,folder,book);else PageStart.select(context,folder,book,value);}message=reset?"다음 캡처는 저장 끝 번호 뒤로 이어갑니다":"다음 첫 캡처의 시작 페이지: "+value+". 촬영 후 중복 / 구간 보정에서 종료·분석하세요";}
+            catch(Exception e){message=e.getMessage()==null?"페이지를 지정하지 못했습니다":e.getMessage();}
+            final String text=message;main.post(()->{if(!destroyed)renderNumber();Toast.makeText(context,text,Toast.LENGTH_LONG).show();});
+        });
     }
+    void shiftOffset(int direction){long next=shownPage()+direction;if(next>=1&&next<=1000000000L)changePage(next,false);}
     void adjustmentButton(LinearLayout row,String text,Runnable action){Button b=new Button(context);b.setText(text);b.setTextSize(12);row.addView(b,new LinearLayout.LayoutParams(0,dp(42),1));b.setOnClickListener(v->action.run());}
     void editOffset(){
         if(adjustmentPanel!=null)return;
         adjustmentPanel=new LinearLayout(context);adjustmentPanel.setOrientation(1);adjustmentPanel.setPadding(dp(16),dp(12),dp(16),dp(12));adjustmentPanel.setBackgroundColor(0xfff3f6ef);
-        TextView help=new TextView(context);help.setText("표시 번호 보정\n음수는 줄이고 양수는 늘립니다.\n예: 실제 50 + 보정 −7 → 표시 43\n파일명과 이미지는 바뀌지 않습니다.");help.setTextColor(0xff20392e);help.setTextSize(14);adjustmentPanel.addView(help);
-        EditText input=new EditText(context);input.setSingleLine(true);input.setTextColor(0xff20392e);input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);input.setText(String.valueOf(offset()));input.selectAll();adjustmentPanel.addView(input);
+        TextView help=new TextView(context);help.setText("다음 첫 캡처의 실제 페이지\n예: 016 지정 → 다음 이미지는 16페이지 기준.\n앞뒤 같은 페이지까지 순서대로 겹쳐 찍고\n중복 / 구간 보정 → 종료·분석에서 적용하세요.\n교체 원본은 백업하며 충돌 시 적용하지 않습니다.");help.setTextColor(0xff20392e);help.setTextSize(13);adjustmentPanel.addView(help);
+        EditText input=new EditText(context);input.setSingleLine(true);input.setTextColor(0xff20392e);input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);input.setText(String.valueOf(shownPage()));input.selectAll();adjustmentPanel.addView(input);
         TextView error=new TextView(context);error.setTextColor(0xffa03025);error.setTextSize(12);adjustmentPanel.addView(error);
         LinearLayout actions=new LinearLayout(context);adjustmentPanel.addView(actions);
-        adjustmentButton(actions,"적용",()->{try{saveOffset(Integer.parseInt(input.getText().toString().trim()));closeAdjustment();}catch(NumberFormatException e){error.setText("−2147483648부터 2147483647까지 정수를 입력하세요");}});
-        adjustmentButton(actions,"초기화",()->{saveOffset(0);closeAdjustment();});adjustmentButton(actions,"취소",()->closeAdjustment());
+        adjustmentButton(actions,"시작 지정",()->{try{long value=Long.parseLong(input.getText().toString().trim());if(value<1||value>1000000000L)throw new NumberFormatException();changePage(value,false);closeAdjustment();}catch(NumberFormatException e){error.setText("1~1000000000 사이의 페이지를 입력하세요");}});
+        adjustmentButton(actions,"끝에 이어찍기",()->{changePage(0,true);closeAdjustment();});adjustmentButton(actions,"취소",()->closeAdjustment());
         android.util.DisplayMetrics metrics=context.getResources().getDisplayMetrics();
-        WindowManager.LayoutParams p=new WindowManager.LayoutParams(Math.min(dp(320),metrics.widthPixels-dp(24)),-2,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,PixelFormat.TRANSLUCENT);p.gravity=Gravity.CENTER;p.softInputMode=WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE|WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE;
-        try{windows.addView(adjustmentPanel,p);input.requestFocus();main.postDelayed(()->{if(adjustmentPanel!=null)context.getSystemService(android.view.inputmethod.InputMethodManager.class).showSoftInput(input,android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);},120);}catch(RuntimeException e){adjustmentPanel=null;Toast.makeText(context,"보정 입력창을 열지 못했습니다",Toast.LENGTH_LONG).show();}
+        WindowManager.LayoutParams p=new WindowManager.LayoutParams(Math.min(dp(330),metrics.widthPixels-dp(24)),-2,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,PixelFormat.TRANSLUCENT);p.gravity=Gravity.CENTER;p.softInputMode=WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE|WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE;
+        try{windows.addView(adjustmentPanel,p);input.requestFocus();main.postDelayed(()->{if(adjustmentPanel!=null)context.getSystemService(android.view.inputmethod.InputMethodManager.class).showSoftInput(input,android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);},120);}catch(RuntimeException e){adjustmentPanel=null;Toast.makeText(context,"페이지 입력창을 열지 못했습니다",Toast.LENGTH_LONG).show();}
     }
     void closeAdjustment(){if(adjustmentPanel!=null){context.getSystemService(android.view.inputmethod.InputMethodManager.class).hideSoftInputFromWindow(adjustmentPanel.getWindowToken(),0);try{windows.removeView(adjustmentPanel);}catch(RuntimeException ignored){}adjustmentPanel=null;}}
     void hide(){closeAdjustment();visible=false;if(root!=null){try{windows.removeView(root);}catch(RuntimeException ignored){}root=null;}}
