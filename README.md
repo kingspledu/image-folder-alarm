@@ -1,4 +1,4 @@
-# 이미지 폴더 알림
+﻿# 이미지 폴더 알림
 
 Galaxy S23 Ultra를 위해 만든 안드로이드 캡처 정리 앱과 다운로드 안내 사이트입니다.
 
@@ -10,4 +10,7 @@ Galaxy S23 Ultra를 위해 만든 안드로이드 캡처 정리 앱과 다운로
 
 빌드·번호 처리 14개 테스트·서명 검증 통과. Galaxy S23 Ultra 실기기 검증은 미실시입니다.
 
-GitHub Pages 배포 소스: main 브랜치의 /docs. 저장소는 비공개로 유지합니다.
+사이트: https://kingspledu.github.io/image-folder-alarm/
+
+GitHub Pages 배포 소스: main 브랜치의 /docs. 저장소와 다운로드 사이트는 공개되어 있습니다.
+
