@@ -13,7 +13,11 @@ final class FloatingCounter {
     final WindowManager windows;
     final PreviewOverlay preview;
     LinearLayout root;
-    TextView label,number;
+    TextView label,number,correction;
+    String activeBook;
+    long actualNumber;
+    int pendingNow;
+    LinearLayout adjustmentPanel;
     WindowManager.LayoutParams params;
     boolean destroyed;
     volatile boolean visible;
@@ -21,13 +25,15 @@ final class FloatingCounter {
     int dp(int n){return Math.round(n*context.getResources().getDisplayMetrics().density);}
     void show(String book){
         if(destroyed||root!=null||!Settings.canDrawOverlays(context))return;
+        activeBook=book;
         root=new LinearLayout(context);root.setOrientation(LinearLayout.VERTICAL);root.setGravity(Gravity.CENTER_VERTICAL);root.setPadding(dp(12),dp(7),dp(4),dp(7));
         GradientDrawable bg=new GradientDrawable();bg.setColor(Color.rgb(28,49,39));bg.setCornerRadius(dp(14));root.setBackground(bg);root.setElevation(dp(6));
         LinearLayout controls=new LinearLayout(context);controls.setGravity(Gravity.CENTER_VERTICAL);root.addView(controls);
         LinearLayout content=new LinearLayout(context);content.setOrientation(LinearLayout.VERTICAL);
         label=new TextView(context);label.setText(book);label.setTextColor(0xffc4d8c8);label.setTextSize(10);label.setMaxWidth(dp(130));label.setSingleLine(true);label.setEllipsize(android.text.TextUtils.TruncateAt.END);
         number=new TextView(context);number.setText("준비 중");number.setTextColor(Color.WHITE);number.setTextSize(22);number.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
-        content.addView(label);content.addView(number);controls.addView(content);
+        correction=new TextView(context);correction.setTextColor(0xffc4d8c8);correction.setTextSize(10);
+        content.addView(label);content.addView(number);content.addView(correction);controls.addView(content);
         Button capture=new Button(context);capture.setText("캡처");capture.setContentDescription("등록된 밀리 캡처 버튼 한 번 누르기");
         controls.addView(capture,new LinearLayout.LayoutParams(dp(72),dp(48)));
         capture.setOnClickListener(v->{
@@ -47,6 +53,10 @@ final class FloatingCounter {
         LinearLayout tools=new LinearLayout(context);
         Button latest=new Button(context);latest.setText("마지막 이미지 / 삭제");latest.setTextSize(12);tools.addView(latest,new LinearLayout.LayoutParams(-1,dp(44)));root.addView(tools);
         latest.setOnClickListener(v->preview.show(book));
+        LinearLayout adjust=new LinearLayout(context);root.addView(adjust);
+        adjustmentButton(adjust,"−1",()->shiftOffset(-1));
+        adjustmentButton(adjust,"표시 보정",()->editOffset());
+        adjustmentButton(adjust,"+1",()->shiftOffset(1));
         TextView close=new TextView(context);close.setText("×");close.setTextColor(0xffc4d8c8);close.setTextSize(23);close.setGravity(Gravity.CENTER);close.setContentDescription("번호창 닫기. 감시는 계속됩니다");
         controls.addView(close,new LinearLayout.LayoutParams(dp(44),dp(44)));
         close.setOnClickListener(v->{preview.close();context.getSharedPreferences("watch",0).edit().putBoolean("floating",false).apply();hide();});
@@ -75,13 +85,39 @@ final class FloatingCounter {
                 }return false;
             }
         });
-        try{windows.addView(root,params);visible=true;}catch(RuntimeException e){root=null;Toast.makeText(context,"번호창을 표시하지 못했습니다. 다른 앱 위에 표시 권한을 확인하세요",Toast.LENGTH_LONG).show();}
+        try{windows.addView(root,params);visible=true;renderNumber();}catch(RuntimeException e){root=null;Toast.makeText(context,"번호창을 표시하지 못했습니다. 다른 앱 위에 표시 권한을 확인하세요",Toast.LENGTH_LONG).show();}
     }
     void update(long last,int pending){main.post(()->{
         if(destroyed||root==null)return;
         preview.changed(last,pending);
-        number.setText(String.format(java.util.Locale.ROOT,"%03d",last)+(pending>0?" · 정리 중":""));
+        actualNumber=last;pendingNow=pending;renderNumber();
     });}
-    void hide(){visible=false;if(root!=null){try{windows.removeView(root);}catch(RuntimeException ignored){}root=null;}}
+    int offset(){return context.getSharedPreferences("watch",0).getInt("displayOffset:"+activeBook,0);}
+    void renderNumber(){
+        if(root==null)return;
+        int delta=offset();
+        number.setText(String.format(java.util.Locale.ROOT,"%03d",DisplayNumber.value(actualNumber,delta))+(pendingNow>0?" · 정리 중":""));
+        correction.setText("실제 "+actualNumber+" · 보정 "+(delta>=0?"+":"")+delta);
+    }
+    void saveOffset(int value){context.getSharedPreferences("watch",0).edit().putInt("displayOffset:"+activeBook,value).apply();renderNumber();}
+    void shiftOffset(int direction){
+        int current=offset();if(direction>0&&current==Integer.MAX_VALUE||direction<0&&current==Integer.MIN_VALUE)return;saveOffset(current+direction);
+    }
+    void adjustmentButton(LinearLayout row,String text,Runnable action){Button b=new Button(context);b.setText(text);b.setTextSize(12);row.addView(b,new LinearLayout.LayoutParams(0,dp(42),1));b.setOnClickListener(v->action.run());}
+    void editOffset(){
+        if(adjustmentPanel!=null)return;
+        adjustmentPanel=new LinearLayout(context);adjustmentPanel.setOrientation(1);adjustmentPanel.setPadding(dp(16),dp(12),dp(16),dp(12));adjustmentPanel.setBackgroundColor(0xfff3f6ef);
+        TextView help=new TextView(context);help.setText("표시 번호 보정\n음수는 줄이고 양수는 늘립니다.\n예: 실제 50 + 보정 −7 → 표시 43\n파일명과 이미지는 바뀌지 않습니다.");help.setTextColor(0xff20392e);help.setTextSize(14);adjustmentPanel.addView(help);
+        EditText input=new EditText(context);input.setSingleLine(true);input.setTextColor(0xff20392e);input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);input.setText(String.valueOf(offset()));input.selectAll();adjustmentPanel.addView(input);
+        TextView error=new TextView(context);error.setTextColor(0xffa03025);error.setTextSize(12);adjustmentPanel.addView(error);
+        LinearLayout actions=new LinearLayout(context);adjustmentPanel.addView(actions);
+        adjustmentButton(actions,"적용",()->{try{saveOffset(Integer.parseInt(input.getText().toString().trim()));closeAdjustment();}catch(NumberFormatException e){error.setText("−2147483648부터 2147483647까지 정수를 입력하세요");}});
+        adjustmentButton(actions,"초기화",()->{saveOffset(0);closeAdjustment();});adjustmentButton(actions,"취소",()->closeAdjustment());
+        android.util.DisplayMetrics metrics=context.getResources().getDisplayMetrics();
+        WindowManager.LayoutParams p=new WindowManager.LayoutParams(Math.min(dp(320),metrics.widthPixels-dp(24)),-2,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,PixelFormat.TRANSLUCENT);p.gravity=Gravity.CENTER;p.softInputMode=WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE|WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE;
+        try{windows.addView(adjustmentPanel,p);input.requestFocus();main.postDelayed(()->{if(adjustmentPanel!=null)context.getSystemService(android.view.inputmethod.InputMethodManager.class).showSoftInput(input,android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);},120);}catch(RuntimeException e){adjustmentPanel=null;Toast.makeText(context,"보정 입력창을 열지 못했습니다",Toast.LENGTH_LONG).show();}
+    }
+    void closeAdjustment(){if(adjustmentPanel!=null){context.getSystemService(android.view.inputmethod.InputMethodManager.class).hideSoftInputFromWindow(adjustmentPanel.getWindowToken(),0);try{windows.removeView(adjustmentPanel);}catch(RuntimeException ignored){}adjustmentPanel=null;}}
+    void hide(){closeAdjustment();visible=false;if(root!=null){try{windows.removeView(root);}catch(RuntimeException ignored){}root=null;}}
     void destroy(){preview.close();TapTarget.close();destroyed=true;main.removeCallbacksAndMessages(null);hide();}
 }
