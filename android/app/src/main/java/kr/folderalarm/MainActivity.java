@@ -11,16 +11,18 @@ public class MainActivity extends Activity {
     TextView status;
     EditText bookName;
     Button startButton, stopButton;
+    CheckBox floating;
     final Handler handler = new Handler(Looper.getMainLooper());
     final Runnable update = new Runnable() { public void run() { refresh(); handler.postDelayed(this, 2000); } };
     void refresh() {
         android.content.SharedPreferences p = getSharedPreferences("watch", 0);
         boolean running=WatchService.running;
+        if(floating!=null) floating.setChecked(p.getBoolean("floating",true));
         if(startButton!=null) startButton.setEnabled(!running);
         if(stopButton!=null) stopButton.setEnabled(running);
         if(bookName!=null) bookName.setEnabled(!running);
         status.setText((running?"● 감시 켜짐\n":"○ 감시 꺼짐\n") + "폴더: " + p.getString("folder", "선택하지 않음") + "\n\n" + p.getString("status", "감시 중지")
-            + "\n\n" + Alerts.state(this) + "\n" + p.getString("lastEvent", "최근 이미지 감지 기록 없음") + "\n\n새 이미지 이름: 책이름_001.확장자\n기존 파일은 변경하지 않습니다. 하위 폴더는 제외합니다.\n3초마다 검사하며 절전 중에는 지연될 수 있습니다.");
+            + "\n\n" + Alerts.state(this) + "\n" + p.getString("lastEvent", "최근 이미지 감지 기록 없음") + "\n\n새 이미지 이름: 책이름_001.확장자\n기존 파일은 변경하지 않습니다. 하위 폴더는 제외합니다.\n1초마다 검사하며 절전 중에는 지연될 수 있습니다.");
     }
     public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -33,6 +35,12 @@ public class MainActivity extends Activity {
         bookName.setText(getSharedPreferences("watch",0).getString("bookName","")); layout.addView(bookName);
         button(layout, "1. 폴더 선택", () -> startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION), 10));
+        floating=new CheckBox(this);floating.setText("작은 번호창 표시");floating.setChecked(getSharedPreferences("watch",0).getBoolean("floating",true));layout.addView(floating);
+        floating.setOnClickListener(v->{
+            getSharedPreferences("watch",0).edit().putBoolean("floating",floating.isChecked()).apply();
+            if(floating.isChecked()&&!Settings.canDrawOverlays(this)){overlayPermission();return;}
+            if(WatchService.running)startService(new Intent(this,WatchService.class).setAction("overlay"));
+        });
         startButton=button(layout, "감시 시작", () -> {
             String book=bookName.getText().toString().trim();
             if(!NamePolicy.validBook(book)) { Toast.makeText(this,"책 이름을 1~80자로 입력하고 파일명 금지 문자를 제외하세요",1).show();return; }
@@ -43,6 +51,7 @@ public class MainActivity extends Activity {
                 startActivity(new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName())); return;
             }
             if (!getSharedPreferences("watch", 0).contains("uri")) { Toast.makeText(this, "폴더를 먼저 선택하세요", 0).show(); return; }
+            if(floating.isChecked()&&!Settings.canDrawOverlays(this)){overlayPermission();return;}
             getSharedPreferences("watch",0).edit().putString("bookName",book).apply();
             startForegroundService(new Intent(this, WatchService.class).putExtra("bookName",book));
         });
@@ -65,8 +74,14 @@ public class MainActivity extends Activity {
         });
         setContentView(scroll);
     }
+    void overlayPermission(){
+        Toast.makeText(this,"다른 앱 위에 표시를 허용한 뒤 앱으로 돌아와 감시 시작을 누르세요",Toast.LENGTH_LONG).show();
+        startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:"+getPackageName())));
+    }
     Button button(LinearLayout layout, String text, Runnable action) { Button b = new Button(this); b.setText(text); b.setOnClickListener(v -> action.run()); layout.addView(b); return b; }
-    protected void onResume() { super.onResume(); handler.post(update); }
+    protected void onResume() { super.onResume(); handler.post(update);
+        if(WatchService.running&&Settings.canDrawOverlays(this))startService(new Intent(this,WatchService.class).setAction("overlay"));
+    }
     protected void onPause() { handler.removeCallbacks(update); super.onPause(); }
     protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);

@@ -13,6 +13,9 @@ public class WatchService extends Service {
     static final Object FILE_LOCK=new Object();
     static volatile boolean running;
     String bookName;
+    FloatingCounter floatingCounter;
+    volatile long lastNumber;
+    volatile int pendingNumber;
     ScheduledExecutorService worker;
     NotificationManager manager;
     android.content.SharedPreferences prefs;
@@ -34,6 +37,7 @@ public class WatchService extends Service {
     }
     public int onStartCommand(Intent intent, int flags, int id) {
         if (intent != null && "stop".equals(intent.getAction())) { stopSelf(); return START_NOT_STICKY; }
+        if(intent!=null&&"overlay".equals(intent.getAction())){if(worker!=null)syncFloating();else stopSelf();return START_NOT_STICKY;}
         if (worker != null) return START_NOT_STICKY;
         bookName=intent==null?prefs.getString("bookName",""):intent.getStringExtra("bookName");
         if(!NamePolicy.validBook(bookName)) { stopSelf();return START_NOT_STICKY; }
@@ -42,7 +46,8 @@ public class WatchService extends Service {
         startForeground(1,note("watch","폴더 감시 및 자동 이름 변경 중","새 이미지에 책 이름과 순번을 붙입니다")
             .setOngoing(true).addAction(new Notification.Action.Builder(null,"중지",stop).build()).build());
         running=true;
-        worker=Executors.newSingleThreadScheduledExecutor(); worker.scheduleWithFixedDelay(this::scan,0,3,TimeUnit.SECONDS);
+        syncFloating();
+        worker=Executors.newSingleThreadScheduledExecutor(); worker.scheduleWithFixedDelay(this::scan,0,1,TimeUnit.SECONDS);
         return START_NOT_STICKY;
     }
     List<Image> list(Uri tree) throws Exception {
@@ -66,7 +71,7 @@ public class WatchService extends Service {
             Uri tree=Uri.parse(treeString); List<Image> images=list(tree);
             Set<String> ids=new HashSet<>(), names=new HashSet<>();
             for(Image image:images) { ids.add(image.id); names.add(image.name); }
-            if(known==null) { known=ids; previous=images.size(); status("감시 시작 · 기존 이미지 "+previous+"장은 유지"); return; }
+            if(known==null) { known=ids; previous=images.size(); updateFloating(names,0); status("감시 시작 · 기존 이미지 "+previous+"장은 유지"); return; }
             int added=Math.max(0,images.size()-previous), renamed=0, failures=0;
             for(Image image:images) if(!known.contains(image.id)) pending.add(image.id);
             pending.retainAll(ids); sizes.keySet().retainAll(ids);
@@ -74,7 +79,7 @@ public class WatchService extends Service {
                 if(stopping) return;
                 if(!pending.contains(image.id)) continue;
                 Long last=sizes.put(image.id,image.size);
-                // Two equal nonzero sizes on consecutive scans avoid renaming while a capture is being written.
+                // Two equal nonzero sizes on consecutive one-second scans avoid renaming while a capture is being written.
                 if(last==null || image.size<=0 || last.longValue()!=image.size) continue;
                 try {
                     if((image.flags & DocumentsContract.Document.FLAG_SUPPORTS_RENAME)==0) throw new IllegalStateException("이름 변경 미지원");
@@ -87,21 +92,33 @@ public class WatchService extends Service {
                 pending.remove(image.id); sizes.remove(image.id);
             }
             known=ids;previous=images.size();
+            updateFloating(names,pending.size());
             String text="전체 "+previous+"장 · 이름 변경 "+renamed+"장"+(failures>0?" · 변경 실패 "+failures+"장 (원본 유지)":"");
             if(added>0) {
                 String event="최근 감지: "+new java.text.SimpleDateFormat("HH:mm:ss",Locale.KOREA).format(new Date())+" · 새 이미지 "+added+"장 · 전체 "+previous+"장";
                 prefs.edit().putString("lastEvent",event).apply();
-                manager.notify(2,note("images","새 이미지 "+added+"장 감지",event).setAutoCancel(true).build());
+                if(floatingCounter==null||!floatingCounter.visible)manager.notify(2,note("images","새 이미지 "+added+"장 감지",event).setAutoCancel(true).build());
             }
             // Renaming results must not replace the capture alert a few seconds later.
-            if(renamed>0 || failures>0) manager.notify(5,note("results","자동 이름 변경 결과",text).setAutoCancel(true).build());
+            if(failures>0 || renamed>0&&(floatingCounter==null||!floatingCounter.visible)) manager.notify(5,note("results","자동 이름 변경 결과",text).setAutoCancel(true).build());
             status("감시 중 · "+text+(pending.isEmpty()?"":" · 저장 완료 대기 "+pending.size()+"장"));
         } catch(Exception e) {
             status("폴더 접근 오류 · 다시 선택하세요");
             manager.notify(3,note("images","감시 중단","폴더 접근 권한을 확인하고 다시 시작하세요").build()); stopSelf();
         }
     }
+    void syncFloating(){
+        if(floatingCounter==null)floatingCounter=new FloatingCounter(this);
+        if(prefs.getBoolean("floating",true)&&android.provider.Settings.canDrawOverlays(this)){
+            floatingCounter.show(bookName);floatingCounter.update(lastNumber,pendingNumber);
+        }else floatingCounter.hide();
+    }
+    void updateFloating(Set<String> names,int waiting){
+        long max=0;for(String name:names)max=Math.max(max,NamePolicy.number(bookName,name));
+        lastNumber=max;pendingNumber=waiting;
+        FloatingCounter counter=floatingCounter;if(counter!=null)counter.update(max,waiting);
+    }
     void status(String text) { if(!stopping)prefs.edit().putString("status",text).apply(); }
-    public void onDestroy() { stopping=true;running=false;if(worker!=null)worker.shutdownNow();prefs.edit().putString("status","감시 중지").apply();super.onDestroy(); }
+    public void onDestroy() { stopping=true;if(floatingCounter!=null)floatingCounter.destroy();running=false;if(worker!=null)worker.shutdownNow();prefs.edit().putString("status","감시 중지").apply();super.onDestroy(); }
     public IBinder onBind(Intent intent) { return null; }
 }
