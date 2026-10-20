@@ -22,7 +22,7 @@ public class MainActivity extends Activity {
         if(stopButton!=null) stopButton.setEnabled(running);
         if(bookName!=null) bookName.setEnabled(!running);
         status.setText((running?"● 감시 켜짐\n":"○ 감시 꺼짐\n") + "폴더: " + p.getString("folder", "선택하지 않음") + "\n\n" + p.getString("status", "감시 중지")
-            + "\n\n" + Alerts.state(this) + "\n" + p.getString("lastEvent", "최근 이미지 감지 기록 없음") + "\n\n새 이미지 이름: 책이름_001.확장자\n기존 파일은 변경하지 않습니다. 하위 폴더는 제외합니다.\n1초마다 검사하며 절전 중에는 지연될 수 있습니다.");
+            + "\n\n" + Alerts.state(this) + "\n" + p.getString("lastEvent", "최근 이미지 감지 기록 없음") + "\n\n새 이미지 이름: 책이름_001.확장자\n기존 파일은 변경하지 않습니다. 하위 폴더는 제외합니다.\n변경 이벤트와 0.2초 주기로 감지하며 절전 중에는 지연될 수 있습니다.");
     }
     public void onCreate(Bundle state) {
         super.onCreate(state);

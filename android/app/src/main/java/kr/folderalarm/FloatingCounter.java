@@ -58,7 +58,7 @@ final class FloatingCounter {
     }
     void update(long last,int pending){main.post(()->{
         if(destroyed||root==null)return;
-        number.setText(String.format(java.util.Locale.ROOT,"%03d",last)+(pending>0?" · 저장 중":""));
+        number.setText(String.format(java.util.Locale.ROOT,"%03d",last)+(pending>0?" · 정리 중":""));
     });}
     void hide(){visible=false;if(root!=null){try{windows.removeView(root);}catch(RuntimeException ignored){}root=null;}}
     void destroy(){destroyed=true;main.removeCallbacksAndMessages(null);hide();}

@@ -22,6 +22,10 @@ public class WatchService extends Service {
     Set<String> known;
     final Map<String, Long> sizes = new HashMap<>();
     final Set<String> pending = new HashSet<>();
+    final Map<String,String> reserved=new HashMap<>();
+    final Map<String,Long> stableSince=new HashMap<>();
+    android.database.ContentObserver observer;
+    final java.util.concurrent.atomic.AtomicBoolean queued=new java.util.concurrent.atomic.AtomicBoolean();
     int previous;
     volatile boolean stopping;
     String treeString;
@@ -47,7 +51,12 @@ public class WatchService extends Service {
             .setOngoing(true).addAction(new Notification.Action.Builder(null,"중지",stop).build()).build());
         running=true;
         syncFloating();
-        worker=Executors.newSingleThreadScheduledExecutor(); worker.scheduleWithFixedDelay(this::scan,0,1,TimeUnit.SECONDS);
+        worker=Executors.newSingleThreadScheduledExecutor(); worker.scheduleWithFixedDelay(this::scan,0,200,TimeUnit.MILLISECONDS);
+        observer=new android.database.ContentObserver(null){public void onChange(boolean selfChange){requestScan();}};
+        try{
+            Uri tree=Uri.parse(treeString);
+            getContentResolver().registerContentObserver(DocumentsContract.buildChildDocumentsUriUsingTree(tree,DocumentsContract.getTreeDocumentId(tree)),true,observer);
+        }catch(RuntimeException ignored){ /* 200ms polling remains available if this provider has no observer support. */ }
         return START_NOT_STICKY;
     }
     List<Image> list(Uri tree) throws Exception {
@@ -65,6 +74,11 @@ public class WatchService extends Service {
         }
         result.sort(Comparator.comparing(i -> i.name)); return result;
     }
+    void requestScan(){
+        ScheduledExecutorService executor=worker;
+        if(stopping||executor==null||!queued.compareAndSet(false,true))return;
+        try{executor.execute(()->{queued.set(false);scan();});}catch(java.util.concurrent.RejectedExecutionException ignored){queued.set(false);}
+    }
     void scan() { synchronized(FILE_LOCK) { if(!stopping) scanLocked(); } }
     void scanLocked() {
         try {
@@ -73,26 +87,36 @@ public class WatchService extends Service {
             for(Image image:images) { ids.add(image.id); names.add(image.name); }
             if(known==null) { known=ids; previous=images.size(); updateFloating(names,0); status("감시 시작 · 기존 이미지 "+previous+"장은 유지"); return; }
             int added=Math.max(0,images.size()-previous), renamed=0, failures=0;
-            for(Image image:images) if(!known.contains(image.id)) pending.add(image.id);
-            pending.retainAll(ids); sizes.keySet().retainAll(ids);
+            pending.retainAll(ids); sizes.keySet().retainAll(ids);reserved.keySet().retainAll(ids);stableSince.keySet().retainAll(ids);
+            Set<String> occupied=new HashSet<>(names);occupied.addAll(reserved.values());
+            for(Image image:images) if(!known.contains(image.id)&&pending.add(image.id)){
+                String target=NamePolicy.next(bookName,image.name,occupied);reserved.put(image.id,target);occupied.add(target);
+            }
+            // Publish allocated numbers before waiting for file stability or provider rename calls.
+            Set<String> visibleNames=new HashSet<>(names);visibleNames.addAll(reserved.values());updateFloating(visibleNames,pending.size());
             for(Image image:images) {
                 if(stopping) return;
                 if(!pending.contains(image.id)) continue;
                 Long last=sizes.put(image.id,image.size);
-                // Two equal nonzero sizes on consecutive one-second scans avoid renaming while a capture is being written.
-                if(last==null || image.size<=0 || last.longValue()!=image.size) continue;
+                long now=android.os.SystemClock.uptimeMillis();
+                if(last==null||last.longValue()!=image.size){stableSince.put(image.id,now);continue;}
+                if(image.size<=0||now-stableSince.getOrDefault(image.id,now)<300)continue;
                 try {
                     if((image.flags & DocumentsContract.Document.FLAG_SUPPORTS_RENAME)==0) throw new IllegalStateException("이름 변경 미지원");
-                    String next=NamePolicy.next(bookName,image.name,names);
+                    String next=reserved.get(image.id);
+                    if(next==null)continue;
+                    if(names.contains(next)&&!image.name.equals(next)){
+                        Set<String> taken=new HashSet<>(names);taken.addAll(reserved.values());next=NamePolicy.next(bookName,image.name,taken);reserved.put(image.id,next);
+                    }
                     Uri old=DocumentsContract.buildDocumentUriUsingTree(tree,image.id);
                     Uri updated=DocumentsContract.renameDocument(getContentResolver(),old,next);
                     if(updated==null) throw new IllegalStateException("이름 변경 실패");
                     ids.remove(image.id); ids.add(DocumentsContract.getDocumentId(updated)); names.add(next); renamed++;
                 } catch(Exception e) { failures++; }
-                pending.remove(image.id); sizes.remove(image.id);
+                pending.remove(image.id); sizes.remove(image.id);reserved.remove(image.id);stableSince.remove(image.id);
             }
             known=ids;previous=images.size();
-            updateFloating(names,pending.size());
+            visibleNames=new HashSet<>(names);visibleNames.addAll(reserved.values());updateFloating(visibleNames,pending.size());
             String text="전체 "+previous+"장 · 이름 변경 "+renamed+"장"+(failures>0?" · 변경 실패 "+failures+"장 (원본 유지)":"");
             if(added>0) {
                 String event="최근 감지: "+new java.text.SimpleDateFormat("HH:mm:ss",Locale.KOREA).format(new Date())+" · 새 이미지 "+added+"장 · 전체 "+previous+"장";
@@ -119,6 +143,6 @@ public class WatchService extends Service {
         FloatingCounter counter=floatingCounter;if(counter!=null)counter.update(max,waiting);
     }
     void status(String text) { if(!stopping)prefs.edit().putString("status",text).apply(); }
-    public void onDestroy() { stopping=true;if(floatingCounter!=null)floatingCounter.destroy();running=false;if(worker!=null)worker.shutdownNow();prefs.edit().putString("status","감시 중지").apply();super.onDestroy(); }
+    public void onDestroy() { stopping=true;if(observer!=null)getContentResolver().unregisterContentObserver(observer);if(floatingCounter!=null)floatingCounter.destroy();running=false;if(worker!=null)worker.shutdownNow();prefs.edit().putString("status","감시 중지").apply();super.onDestroy(); }
     public IBinder onBind(Intent intent) { return null; }
 }
