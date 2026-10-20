@@ -32,7 +32,7 @@ final class DeleteLast {
             }catch(Exception e){a.runOnUiThread(()->{busy=false;message(a,"폴더 접근 권한을 확인하세요");});}
         });
     }
-    static Entry find(Activity a,String folder,String book)throws Exception {
+    static Entry find(Context a,String folder,String book)throws Exception {
         Uri tree=Uri.parse(folder);Entry last=null;
         Uri children=DocumentsContract.buildChildDocumentsUriUsingTree(tree,DocumentsContract.getTreeDocumentId(tree));
         String[] cols={DocumentsContract.Document.COLUMN_DOCUMENT_ID,DocumentsContract.Document.COLUMN_DISPLAY_NAME,DocumentsContract.Document.COLUMN_FLAGS,DocumentsContract.Document.COLUMN_MIME_TYPE};

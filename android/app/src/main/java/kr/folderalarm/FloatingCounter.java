@@ -11,23 +11,25 @@ final class FloatingCounter {
     final Context context;
     final Handler main=new Handler(Looper.getMainLooper());
     final WindowManager windows;
+    final PreviewOverlay preview;
     LinearLayout root;
     TextView label,number;
     WindowManager.LayoutParams params;
     boolean destroyed;
     volatile boolean visible;
-    FloatingCounter(Context c){context=c;windows=c.getSystemService(WindowManager.class);}
+    FloatingCounter(Context c){context=c;windows=c.getSystemService(WindowManager.class);preview=new PreviewOverlay(c);}
     int dp(int n){return Math.round(n*context.getResources().getDisplayMetrics().density);}
     void show(String book){
         if(destroyed||root!=null||!Settings.canDrawOverlays(context))return;
-        root=new LinearLayout(context);root.setOrientation(LinearLayout.HORIZONTAL);root.setGravity(Gravity.CENTER_VERTICAL);root.setPadding(dp(12),dp(7),dp(4),dp(7));
+        root=new LinearLayout(context);root.setOrientation(LinearLayout.VERTICAL);root.setGravity(Gravity.CENTER_VERTICAL);root.setPadding(dp(12),dp(7),dp(4),dp(7));
         GradientDrawable bg=new GradientDrawable();bg.setColor(Color.rgb(28,49,39));bg.setCornerRadius(dp(14));root.setBackground(bg);root.setElevation(dp(6));
+        LinearLayout controls=new LinearLayout(context);controls.setGravity(Gravity.CENTER_VERTICAL);root.addView(controls);
         LinearLayout content=new LinearLayout(context);content.setOrientation(LinearLayout.VERTICAL);
         label=new TextView(context);label.setText(book);label.setTextColor(0xffc4d8c8);label.setTextSize(10);label.setMaxWidth(dp(130));label.setSingleLine(true);label.setEllipsize(android.text.TextUtils.TruncateAt.END);
         number=new TextView(context);number.setText("준비 중");number.setTextColor(Color.WHITE);number.setTextSize(22);number.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
-        content.addView(label);content.addView(number);root.addView(content);
+        content.addView(label);content.addView(number);controls.addView(content);
         Button capture=new Button(context);capture.setText("캡처");capture.setContentDescription("등록된 밀리 캡처 버튼 한 번 누르기");
-        root.addView(capture,new LinearLayout.LayoutParams(dp(72),dp(48)));
+        controls.addView(capture,new LinearLayout.LayoutParams(dp(72),dp(48)));
         capture.setOnClickListener(v->{
             if(!MillieClickService.ready()){MillieClickService.message(context,"앱에서 밀리 캡처 접근성을 먼저 켜세요");return;}
             hide();
@@ -40,11 +42,14 @@ final class FloatingCounter {
                 },160));
             },80);
         });
-        Button position=new Button(context);position.setText("위치");position.setContentDescription("캡처 터치 위치 등록");root.addView(position,new LinearLayout.LayoutParams(dp(64),dp(48)));
+        Button position=new Button(context);position.setText("위치");position.setContentDescription("캡처 터치 위치 등록");controls.addView(position,new LinearLayout.LayoutParams(dp(64),dp(48)));
         position.setOnClickListener(v->TapTarget.show(context));
+        LinearLayout tools=new LinearLayout(context);
+        Button latest=new Button(context);latest.setText("마지막 이미지 / 삭제");latest.setTextSize(12);tools.addView(latest,new LinearLayout.LayoutParams(-1,dp(44)));root.addView(tools);
+        latest.setOnClickListener(v->preview.show(book));
         TextView close=new TextView(context);close.setText("×");close.setTextColor(0xffc4d8c8);close.setTextSize(23);close.setGravity(Gravity.CENTER);close.setContentDescription("번호창 닫기. 감시는 계속됩니다");
-        root.addView(close,new LinearLayout.LayoutParams(dp(44),dp(44)));
-        close.setOnClickListener(v->{context.getSharedPreferences("watch",0).edit().putBoolean("floating",false).apply();hide();});
+        controls.addView(close,new LinearLayout.LayoutParams(dp(44),dp(44)));
+        close.setOnClickListener(v->{preview.close();context.getSharedPreferences("watch",0).edit().putBoolean("floating",false).apply();hide();});
         params=new WindowManager.LayoutParams(WindowManager.LayoutParams.WRAP_CONTENT,WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,PixelFormat.TRANSLUCENT);
         params.gravity=Gravity.TOP|Gravity.LEFT;
@@ -74,8 +79,9 @@ final class FloatingCounter {
     }
     void update(long last,int pending){main.post(()->{
         if(destroyed||root==null)return;
+        preview.changed(last,pending);
         number.setText(String.format(java.util.Locale.ROOT,"%03d",last)+(pending>0?" · 정리 중":""));
     });}
     void hide(){visible=false;if(root!=null){try{windows.removeView(root);}catch(RuntimeException ignored){}root=null;}}
-    void destroy(){TapTarget.close();destroyed=true;main.removeCallbacksAndMessages(null);hide();}
+    void destroy(){preview.close();TapTarget.close();destroyed=true;main.removeCallbacksAndMessages(null);hide();}
 }
