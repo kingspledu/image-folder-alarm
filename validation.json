@@ -1,0 +1,9 @@
+{
+  "apk": "ImageFolderAlarm-1.0.apk",
+  "bytes": 20883,
+  "sha256": "db1bc4277b74d0d0e80054248e1250c526778fba3d3fe1e6e2e434dd24f0f034",
+  "unit_tests": "NamePolicy checks passed: 14",
+  "signature_verification": "Verifies\nVerified using v1 scheme (JAR signing): false\nVerified using v2 scheme (APK Signature Scheme v2): true\nVerified using v3 scheme (APK Signature Scheme v3): true\nVerified using v3.1 scheme (APK Signature Scheme v3.1): false\nVerified using v4 scheme (APK Signature Scheme v4): false\nVerified for SourceStamp: false\nNumber of signers: 1\n",
+  "package_info": "package: name='kr.folderalarm' versionCode='1' versionName='1.0' platformBuildVersionName='15' platformBuildVersionCode='35' compileSdkVersion='35' compileSdkVersionCodename='15'\nminSdkVersion:'26'\ntargetSdkVersion:'35'\nuses-permission: name='android.permission.POST_NOTIFICATIONS'\nuses-permission: name='android.permission.VIBRATE'\nuses-permission: name='android.permission.FOREGROUND_SERVICE'\nuses-permission: name='android.permission.FOREGROUND_SERVICE_SPECIAL_USE'\napplication: label='이미지 폴더 알림' icon=''\nlaunchable-activity: name='kr.folderalarm.MainActivity'  label='' icon=''\nproperty: name='android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE' value='User-started monitoring and renaming of newly added images in a user-selected folder until explicitly stopped' \nfeature-group: label=''\n  uses-feature: name='android.hardware.faketouch'\n  uses-implied-feature: name='android.hardware.faketouch' reason='default feature for all apps'\nmain\nother-services\nsupports-screens: 'small' 'normal' 'large' 'xlarge'\nsupports-any-density: 'true'\nlocales:\ndensities:\n",
+  "device_test": "Not run; Galaxy S23 Ultra not connected"
+}

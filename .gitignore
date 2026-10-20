@@ -1,0 +1,6 @@
+*.keystore
+*.idsig
+.env
+local.properties
+.gradle/
+build/
