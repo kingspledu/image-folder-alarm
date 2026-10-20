@@ -20,10 +20,11 @@ public class MainActivity extends Activity {
         if(stopButton!=null) stopButton.setEnabled(running);
         if(bookName!=null) bookName.setEnabled(!running);
         status.setText((running?"● 감시 켜짐\n":"○ 감시 꺼짐\n") + "폴더: " + p.getString("folder", "선택하지 않음") + "\n\n" + p.getString("status", "감시 중지")
-            + "\n\n새 이미지 이름: 책이름_001.확장자\n기존 파일은 변경하지 않습니다. 하위 폴더는 제외합니다.\n3초마다 검사하며 절전 중에는 지연될 수 있습니다.");
+            + "\n\n" + Alerts.state(this) + "\n" + p.getString("lastEvent", "최근 이미지 감지 기록 없음") + "\n\n새 이미지 이름: 책이름_001.확장자\n기존 파일은 변경하지 않습니다. 하위 폴더는 제외합니다.\n3초마다 검사하며 절전 중에는 지연될 수 있습니다.");
     }
     public void onCreate(Bundle state) {
         super.onCreate(state);
+        Alerts.channels(this);
         LinearLayout layout = new LinearLayout(this); layout.setOrientation(1); layout.setPadding(36, 50, 36, 30);
         TextView title = new TextView(this); title.setText("이미지 폴더 알림"); title.setTextSize(27); layout.addView(title);
         status = new TextView(this); status.setTextSize(16); status.setPadding(0, 24, 0, 24); layout.addView(status);
@@ -47,6 +48,16 @@ public class MainActivity extends Activity {
         });
         stopButton=button(layout, "감시 중지", () -> { stopService(new Intent(this, WatchService.class)); getSharedPreferences("watch", 0).edit().putString("status", "감시 중지").apply(); refresh(); });
         button(layout,"마지막 번호 이미지 한 장 삭제",()->DeleteLast.ask(this,bookName.getText().toString().trim()));
+        button(layout,"알림 테스트",()->{
+            if(android.os.Build.VERSION.SDK_INT>=33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=0){
+                requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},12);return;
+            }
+            Alerts.test(this);
+            new AlertDialog.Builder(this).setTitle("테스트 알림을 보냈습니다")
+                .setMessage("알림창에는 있는데 화면 위에 안 뜨면 팝업 알림 설정에서 소리 및 팝업을 허용하세요.\n\n테스트는 되는데 캡처 알림이 없다면, 앱의 최근 감지 기록과 선택 폴더가 실제 캡처 저장 위치인지 확인하세요.")
+                .setPositiveButton("알림 설정",(d,w)->Alerts.settings(this)).setNegativeButton("닫기",null).show();
+        });
+        button(layout,"팝업 알림 설정",()->Alerts.settings(this));
         button(layout, "배터리 설정", () -> startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName()))));
         ScrollView scroll = new ScrollView(this); scroll.addView(layout);
         scroll.setOnApplyWindowInsetsListener((view,insets)->{

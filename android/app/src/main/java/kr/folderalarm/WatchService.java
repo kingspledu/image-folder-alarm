@@ -30,7 +30,7 @@ public class WatchService extends Service {
     public void onCreate() {
         super.onCreate(); prefs=getSharedPreferences("watch",0); manager=getSystemService(NotificationManager.class);
         manager.createNotificationChannel(new NotificationChannel("watch", "감시 상태", NotificationManager.IMPORTANCE_LOW));
-        NotificationChannel changes=new NotificationChannel("images", "새 이미지 알림", NotificationManager.IMPORTANCE_HIGH); changes.enableVibration(true); manager.createNotificationChannel(changes);
+        Alerts.channels(this);
     }
     public int onStartCommand(Intent intent, int flags, int id) {
         if (intent != null && "stop".equals(intent.getAction())) { stopSelf(); return START_NOT_STICKY; }
@@ -88,7 +88,13 @@ public class WatchService extends Service {
             }
             known=ids;previous=images.size();
             String text="전체 "+previous+"장 · 이름 변경 "+renamed+"장"+(failures>0?" · 변경 실패 "+failures+"장 (원본 유지)":"");
-            if(added>0 || renamed>0 || failures>0) manager.notify(2,note("images",added>0?"이미지 "+added+"장 증가":"자동 이름 변경 결과",text).setAutoCancel(true).build());
+            if(added>0) {
+                String event="최근 감지: "+new java.text.SimpleDateFormat("HH:mm:ss",Locale.KOREA).format(new Date())+" · 새 이미지 "+added+"장 · 전체 "+previous+"장";
+                prefs.edit().putString("lastEvent",event).apply();
+                manager.notify(2,note("images","새 이미지 "+added+"장 감지",event).setAutoCancel(true).build());
+            }
+            // Renaming results must not replace the capture alert a few seconds later.
+            if(renamed>0 || failures>0) manager.notify(5,note("results","자동 이름 변경 결과",text).setAutoCancel(true).build());
             status("감시 중 · "+text+(pending.isEmpty()?"":" · 저장 완료 대기 "+pending.size()+"장"));
         } catch(Exception e) {
             status("폴더 접근 오류 · 다시 선택하세요");

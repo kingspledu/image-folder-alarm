@@ -1,4 +1,4 @@
-﻿# 이미지 폴더 알림
+# 이미지 폴더 알림
 
 Galaxy S23 Ultra를 위해 만든 안드로이드 캡처 정리 앱과 다운로드 안내 사이트입니다.
 
@@ -6,7 +6,7 @@ Galaxy S23 Ultra를 위해 만든 안드로이드 캡처 정리 앱과 다운로
 - 책 이름 + 001부터 자동 파일명 변경
 - 가장 큰 번호부터 확인 후 한 장씩 영구 삭제
 
-웹사이트는 `docs/`에 있고 APK는 `docs/downloads/ImageFolderAlarm-1.0.apk`에 있습니다. Android 소스는 `android/`, 설치 안내는 `사용방법.md`, 빌드 검증 결과는 `validation.json`에 있습니다.
+웹사이트는 `docs/`에 있고 APK는 `docs/downloads/ImageFolderAlarm-1.1.apk`에 있습니다. Android 소스는 `android/`, 설치 안내는 `사용방법.md`, 빌드 검증 결과는 `validation.json`에 있습니다.
 
 빌드·번호 처리 14개 테스트·서명 검증 통과. Galaxy S23 Ultra 실기기 검증은 미실시입니다.
 
@@ -14,3 +14,7 @@ Galaxy S23 Ultra를 위해 만든 안드로이드 캡처 정리 앱과 다운로
 
 GitHub Pages 배포 소스: main 브랜치의 /docs. 저장소와 다운로드 사이트는 공개되어 있습니다.
 
+
+
+## v1.1 알림 점검
+알림 테스트와 팝업 알림 설정 버튼, 최근 감지 기록을 추가했습니다. 캡처 알림과 이름 변경 결과 알림을 분리했습니다. 기존 앱을 삭제하지 말고 업데이트 설치하세요. 시스템의 조용한 알림·팝업 차단·방해 금지는 앱이 강제로 해제하지 않습니다.
