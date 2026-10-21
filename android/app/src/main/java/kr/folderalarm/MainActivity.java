@@ -11,12 +11,13 @@ public class MainActivity extends Activity {
     TextView status;
     EditText bookName;
     Button startButton, stopButton;
-    CheckBox floating;
+    CheckBox floating,twoPage;
     final Handler handler = new Handler(Looper.getMainLooper());
     final Runnable update = new Runnable() { public void run() { refresh(); handler.postDelayed(this, 2000); } };
     void refresh() {
         android.content.SharedPreferences p = getSharedPreferences("watch", 0);
         boolean running=WatchService.running;
+        if(twoPage!=null&&bookName!=null)twoPage.setChecked(CaptureMode.step(this,bookName.getText().toString().trim())==2);
         if(floating!=null) floating.setChecked(p.getBoolean("floating",true));
         if(startButton!=null) startButton.setEnabled(!running);
         if(stopButton!=null) stopButton.setEnabled(running);
@@ -34,6 +35,8 @@ public class MainActivity extends Activity {
         bookName.setText(getSharedPreferences("watch",0).getString("bookName","")); layout.addView(bookName);
         button(layout, "1. 폴더 선택", () -> startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION), 10));
+        twoPage=new CheckBox(this);twoPage.setText("두 페이지씩 캡처 (파일 번호·증가·감소 +2)");layout.addView(twoPage);
+        twoPage.setOnClickListener(v->{String selected=bookName.getText().toString().trim();CaptureMode.request(this,selected,twoPage.isChecked()?2:1,()->refresh());});
         floating=new CheckBox(this);floating.setText("작은 번호창 표시");floating.setChecked(getSharedPreferences("watch",0).getBoolean("floating",true));layout.addView(floating);
         floating.setOnClickListener(v->{
             getSharedPreferences("watch",0).edit().putBoolean("floating",floating.isChecked()).apply();

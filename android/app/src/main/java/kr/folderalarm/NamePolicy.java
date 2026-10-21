@@ -12,11 +12,12 @@ public final class NamePolicy {
         if(!m.matches()) return -1;
         try { return Long.parseLong(m.group(1)); } catch(NumberFormatException e) { return -1; }
     }
-    public static String next(String book,String original,Collection<String> names) {
+    public static String next(String book,String original,Collection<String> names) {return next(book,original,names,1);}
+    public static String next(String book,String original,Collection<String> names,int step) {
         long max=0;
         for(String name:names) max=Math.max(max,number(book,name));
         if(max==Long.MAX_VALUE) throw new IllegalStateException("Number limit reached");
         int dot=original.lastIndexOf('.'); String ext=dot>=0?original.substring(dot):"";
-        return book+"_"+String.format(Locale.ROOT,"%03d",max+1)+ext;
+        return book+"_"+String.format(Locale.ROOT,"%03d",PageStride.after(max,step))+ext;
     }
 }

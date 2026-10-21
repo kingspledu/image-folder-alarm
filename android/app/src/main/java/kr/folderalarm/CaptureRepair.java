@@ -19,7 +19,7 @@ final class CaptureRepair {
             if(folder.equals(existing.optString("folder"))&&book.equals(existing.optString("book"))){existing.put("active",true);saveSession(c,existing);return;}
             throw new IllegalStateException("기존 재캡처 묶음을 먼저 분석하거나 취소·보관하세요");
         }
-        JSONObject s=new JSONObject().put("folder",folder).put("book",book).put("active",true).put("startPage",PageStart.selected(c,folder,book)).put("shots",new JSONArray());saveSession(c,s);
+        JSONObject s=new JSONObject().put("folder",folder).put("book",book).put("active",true).put("startPage",PageStart.selected(c,folder,book)).put("step",CaptureMode.step(c,book)).put("shots",new JSONArray());saveSession(c,s);
     }
     static void saveSession(Context c,JSONObject s)throws Exception{if(!prefs(c).edit().putString("repairSession",s.toString()).commit())throw new java.io.IOException("보정 기록 저장 실패");}
     static Uri stage(Context c,Uri uri,String name,long order)throws Exception{
@@ -43,8 +43,8 @@ final class CaptureRepair {
         List<JSONObject> ordered=new ArrayList<>();for(int i=0;i<array.length();i++)ordered.add(array.getJSONObject(i));ordered.sort(Comparator.comparingLong(a->a.optLong("order",0)));
         for(JSONObject a:ordered)shots.add(new RepairPlan.Page(a.getString("uri"),a.getString("name"),ImageFingerprint.hash(c,Uri.parse(a.getString("uri")))));
         long start=s.optLong("startPage",0);
-        if(start>0){Map<String,Long> trusted=new HashMap<>();JSONObject saved=new JSONObject(prefs(c).getString("pageAnchors:"+folder+":"+book,"{}"));Iterator<String> keys=saved.keys();while(keys.hasNext()){String key=keys.next();trusted.put(key,saved.getLong(key));}return RepairPlan.anchored(bookPages(c,folder,book),shots,book,start,trusted);}
-        return RepairPlan.align(bookPages(c,folder,book),shots);
+        if(start>0){Map<String,Long> trusted=new HashMap<>();JSONObject saved=new JSONObject(prefs(c).getString("pageAnchors:"+folder+":"+book,"{}"));Iterator<String> keys=saved.keys();while(keys.hasNext()){String key=keys.next();trusted.put(key,saved.getLong(key));}return RepairPlan.anchored(bookPages(c,folder,book),shots,book,start,trusted,s.optInt("step",1));}
+        return RepairPlan.align(bookPages(c,folder,book),shots,s.optInt("step",1));
     }
     static void cancel(Context c){JSONObject s=session(c);prefs(c).edit().remove(PageStart.key(s.optString("folder"),s.optString("book"))).remove("repairSession").commit();}
     static String target(String book,long number,String original){int dot=original.lastIndexOf('.');return book+"_"+String.format(Locale.ROOT,"%03d",number)+(dot<0?".png":original.substring(dot));}
@@ -73,7 +73,7 @@ final class CaptureRepair {
             SharedPreferences.Editor edit=prefs(c).edit().putString("lastRepairJournal",records.toString()).remove("repairJournal").remove("repairSession");
             if(!plan.anchors.isEmpty()){
                 String key="pageAnchors:"+folder+":"+book;JSONObject saved=new JSONObject(prefs(c).getString(key,"{}"));long last=0;
-                for(Map.Entry<String,Long> entry:plan.anchors.entrySet()){saved.put(entry.getKey(),entry.getValue());last=Math.max(last,entry.getValue());}edit.putString(key,saved.toString()).putLong(PageStart.key(folder,book),last+1);
+                for(Map.Entry<String,Long> entry:plan.anchors.entrySet()){saved.put(entry.getKey(),entry.getValue());last=Math.max(last,entry.getValue());}edit.putString(key,saved.toString()).putLong(PageStart.key(folder,book),PageStride.advance(last,1,plan.step));
             }
             rebaseline();if(!edit.remove("repairJournalMeta").commit())throw new java.io.IOException("페이지 기준 저장 실패");
         }catch(Exception e){try{rollback(c,folder,records);}catch(Exception recovery){throw new java.io.IOException("적용 중단. 파일은 보존되어 있습니다. ‘중단 복구’를 누르세요: "+recovery.getMessage());}throw e;}

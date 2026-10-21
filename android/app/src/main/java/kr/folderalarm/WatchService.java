@@ -97,7 +97,7 @@ public class WatchService extends Service {
             for(Image image:images) if(!known.contains(image.id)&&pending.add(image.id)){
                 if(PageStart.selected(this,treeString,bookName)>0&&!CaptureRepair.active(this,treeString,bookName))CaptureRepair.begin(this,treeString,bookName);
                 captureClock=Math.max(captureClock+1,System.currentTimeMillis()*1000);captureOrder.put(image.id,captureClock);
-                String target=CaptureRepair.active(this,treeString,bookName)?CaptureRepair.stagedName(image.name):NamePolicy.next(bookName,image.name,occupied);reserved.put(image.id,target);occupied.add(target);
+                String target=CaptureRepair.active(this,treeString,bookName)?CaptureRepair.stagedName(image.name):NamePolicy.next(bookName,image.name,occupied,CaptureMode.step(this,bookName));reserved.put(image.id,target);occupied.add(target);
             }
             // Publish allocated numbers before waiting for file stability or provider rename calls.
             Set<String> visibleNames=new HashSet<>(names);visibleNames.addAll(reserved.values());updateFloating(visibleNames,pending.size());
@@ -113,7 +113,7 @@ public class WatchService extends Service {
                     String next=reserved.get(image.id);
                     if(next==null)continue;
                     if(names.contains(next)&&!image.name.equals(next)){
-                        Set<String> taken=new HashSet<>(names);taken.addAll(reserved.values());next=NamePolicy.next(bookName,image.name,taken);reserved.put(image.id,next);
+                        Set<String> taken=new HashSet<>(names);taken.addAll(reserved.values());next=NamePolicy.next(bookName,image.name,taken,CaptureMode.step(this,bookName));reserved.put(image.id,next);
                     }
                     Uri old=DocumentsContract.buildDocumentUriUsingTree(tree,image.id);
                     Uri updated;

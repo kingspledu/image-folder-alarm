@@ -6,8 +6,8 @@ final class PageStart {
     static long selected(Context c,String folder,String book){return CaptureRepair.prefs(c).getLong(key(folder,book),0);}
     static long shown(Context c,String folder,String book,long actual,int waiting){
         JSONObject s=CaptureRepair.session(c);
-        if(folder.equals(s.optString("folder"))&&book.equals(s.optString("book"))&&s.optLong("startPage",0)>0)return s.optLong("startPage")+s.optJSONArray("shots").length()+waiting;
-        long value=selected(c,folder,book);return value>0?value:actual+1;
+        if(folder.equals(s.optString("folder"))&&book.equals(s.optString("book"))&&s.optLong("startPage",0)>0)return PageStride.advance(s.optLong("startPage"),(long)s.optJSONArray("shots").length()+waiting,s.optInt("step",1));
+        long value=selected(c,folder,book);return value>0?value:PageStride.after(actual,CaptureMode.step(c,book));
     }
     static void select(Context c,String folder,String book,long value)throws Exception{
         if(value<1||value>1000000000L)throw new IllegalArgumentException("시작 페이지는 1~1000000000 사이여야 합니다");

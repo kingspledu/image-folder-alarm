@@ -15,6 +15,7 @@ final class FloatingCounter {
     final RepairOverlay repair;
     LinearLayout root;
     TextView label,number,correction;
+    Button minusButton,plusButton,modeButton;
     String activeBook;
     long actualNumber;
     int pendingNow;
@@ -40,9 +41,10 @@ final class FloatingCounter {
         latest.setOnClickListener(v->preview.show(book));
         Button repairButton=new Button(context);repairButton.setText("중복 / 구간 보정");repairButton.setTextSize(11);tools.addView(repairButton,new LinearLayout.LayoutParams(0,dp(44),1));repairButton.setOnClickListener(v->repair.show(book));
         LinearLayout adjust=new LinearLayout(context);root.addView(adjust);
-        adjustmentButton(adjust,"−1",()->shiftOffset(-1));
+        minusButton=adjustmentButton(adjust,"−1",()->shiftOffset(-1));
         adjustmentButton(adjust,"시작 페이지",()->editOffset());
-        adjustmentButton(adjust,"+1",()->shiftOffset(1));
+        plusButton=adjustmentButton(adjust,"+1",()->shiftOffset(1));
+        modeButton=adjustmentButton(adjust,"1쪽씩",()->CaptureMode.request(context,activeBook,CaptureMode.step(context,activeBook)==1?2:1,()->{if(!destroyed)renderNumber();}));
         TextView close=new TextView(context);close.setText("×");close.setTextColor(0xffc4d8c8);close.setTextSize(23);close.setGravity(Gravity.CENTER);close.setContentDescription("번호창 닫기. 감시는 계속됩니다");
         controls.addView(close,new LinearLayout.LayoutParams(dp(44),dp(44)));
         close.setOnClickListener(v->{repair.close();preview.close();context.getSharedPreferences("watch",0).edit().putBoolean("floating",false).apply();hide();});
@@ -85,7 +87,9 @@ final class FloatingCounter {
         if(root==null)return;
         number.setText("다음 "+String.format(java.util.Locale.ROOT,"%03d",page)+(pendingNow>0?" · 정리 중":""));
         number.setMaxWidth(dp(145));
-        correction.setText("저장 끝 번호 "+actualNumber+CaptureRepair.label(context));
+        int stride=CaptureMode.step(context,activeBook);
+        if(minusButton!=null)minusButton.setText("−"+stride);if(plusButton!=null)plusButton.setText("+"+stride);if(modeButton!=null)modeButton.setText(stride+"쪽씩");
+        correction.setText(stride+"쪽씩 · 저장 끝 번호 "+actualNumber+CaptureRepair.label(context));
     }
     void changePage(long value,boolean reset){
         final String folder=pageFolder(),book=activeBook;
@@ -96,8 +100,8 @@ final class FloatingCounter {
             final String text=message;main.post(()->{if(!destroyed)renderNumber();Toast.makeText(context,text,Toast.LENGTH_LONG).show();});
         });
     }
-    void shiftOffset(int direction){long next=shownPage()+direction;if(next>=1&&next<=1000000000L)changePage(next,false);}
-    void adjustmentButton(LinearLayout row,String text,Runnable action){Button b=new Button(context);b.setText(text);b.setTextSize(12);row.addView(b,new LinearLayout.LayoutParams(0,dp(42),1));b.setOnClickListener(v->action.run());}
+    void shiftOffset(int direction){long next=shownPage()+(long)direction*CaptureMode.step(context,activeBook);if(next>=1&&next<=1000000000L)changePage(next,false);}
+    Button adjustmentButton(LinearLayout row,String text,Runnable action){Button b=new Button(context);b.setText(text);b.setTextSize(12);row.addView(b,new LinearLayout.LayoutParams(0,dp(42),1));b.setOnClickListener(v->action.run());return b;}
     void editOffset(){
         if(adjustmentPanel!=null)return;
         adjustmentPanel=new LinearLayout(context);adjustmentPanel.setOrientation(1);adjustmentPanel.setPadding(dp(16),dp(12),dp(16),dp(12));adjustmentPanel.setBackgroundColor(0xfff3f6ef);
