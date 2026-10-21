@@ -24,7 +24,7 @@ final class RepairPlan {
         result.addAll(old.subList(right+1,old.size()));
         return new RepairPlan(new ArrayList<>(old),new ArrayList<>(shots),result,"기존 파일 "+(left+1)+"~"+(right+1)+" 구간: "+(right-left+1)+"장 → "+(last-first+1)+"장\n전체 "+old.size()+"장 → "+result.size()+"장\n앞뒤 동일 이미지 기준으로 연결했습니다. 내용 순서를 확인한 뒤 적용하세요. 이후 파일 번호도 001부터 다시 맞춥니다.");
     }
-    static RepairPlan align(List<Page> old,List<Page> shots,int step){PageStride.check(step);RepairPlan p=align(old,shots);p.step=step;for(int i=0;i<p.numbers.size();i++)p.numbers.set(i,PageStride.advance(1,i,step));return p;}
+    static RepairPlan align(List<Page> old,List<Page> shots,int step){PageStride.check(step);RepairPlan p=align(old,shots);p.step=step;for(int i=0;i<p.numbers.size();i++)p.numbers.set(i,PageStride.advance(step,i,step));return p;}
     static RepairPlan anchored(List<Page> old,List<Page> shots,String book,long start,Map<String,Long> trusted){return anchored(old,shots,book,start,trusted,1);}
     static RepairPlan anchored(List<Page> old,List<Page> shots,String book,long start,Map<String,Long> trusted,int step){
         PageStride.check(step);
