@@ -33,18 +33,23 @@ final class CaptureRepair {
             if(cursor==null)throw new java.io.IOException("폴더 접근 실패");while(cursor.moveToNext())if(!DocumentsContract.Document.MIME_TYPE_DIR.equals(cursor.getString(2)))result.add(new Doc(DocumentsContract.buildDocumentUriUsingTree(tree,cursor.getString(0)).toString(),cursor.getString(1)));
         }return result;
     }
-    static List<RepairPlan.Page> bookPages(Context c,String folder,String book)throws Exception{
-        List<Doc> all=docs(c,folder);all.removeIf(d->NamePolicy.number(book,d.name)<1);all.sort(Comparator.comparingLong(d->NamePolicy.number(book,d.name)));
-        Set<Long> numbers=new HashSet<>();List<RepairPlan.Page> pages=new ArrayList<>();for(Doc d:all){if(!numbers.add(NamePolicy.number(book,d.name)))throw new IllegalArgumentException("같은 파일 번호가 여러 개 있습니다. 먼저 파일명을 정리하세요");pages.add(new RepairPlan.Page(d.uri,d.name,ImageFingerprint.hash(c,Uri.parse(d.uri))));}return pages;
+    static List<RepairPlan.Page> bookPages(Context c,String folder,String book)throws Exception{return bookPages(c,folder,book,null);}
+    static String fingerprint(Context c,String uri,String name,AnalysisProgress progress)throws Exception{
+        if(progress!=null)progress.before(name);String hash=ImageFingerprint.hash(c,Uri.parse(uri),progress);if(progress!=null)progress.after(hash,name);return hash;
     }
-    static RepairPlan finish(Context c,String folder,String book)throws Exception{
+    static List<RepairPlan.Page> bookPages(Context c,String folder,String book,AnalysisProgress progress)throws Exception{
+        List<Doc> all=docs(c,folder);all.removeIf(d->NamePolicy.number(book,d.name)<1);all.sort(Comparator.comparingLong(d->NamePolicy.number(book,d.name)));
+        Set<Long> numbers=new HashSet<>();List<RepairPlan.Page> pages=new ArrayList<>();for(Doc d:all){if(!numbers.add(NamePolicy.number(book,d.name)))throw new IllegalArgumentException("같은 파일 번호가 여러 개 있습니다. 먼저 파일명을 정리하세요");pages.add(new RepairPlan.Page(d.uri,d.name,fingerprint(c,d.uri,d.name,progress)));}return pages;
+    }
+    static RepairPlan finish(Context c,String folder,String book)throws Exception{return finish(c,folder,book,null);}
+    static RepairPlan finish(Context c,String folder,String book,AnalysisProgress progress)throws Exception{
         JSONObject s=session(c);if(!folder.equals(s.optString("folder"))||!book.equals(s.optString("book")))throw new IllegalStateException("현재 책의 재캡처 묶음이 없습니다");
         s.put("active",false);saveSession(c,s);List<RepairPlan.Page> shots=new ArrayList<>();JSONArray array=s.getJSONArray("shots");
         List<JSONObject> ordered=new ArrayList<>();for(int i=0;i<array.length();i++)ordered.add(array.getJSONObject(i));ordered.sort(Comparator.comparingLong(a->a.optLong("order",0)));
-        for(JSONObject a:ordered)shots.add(new RepairPlan.Page(a.getString("uri"),a.getString("name"),ImageFingerprint.hash(c,Uri.parse(a.getString("uri")))));
+        for(JSONObject a:ordered)shots.add(new RepairPlan.Page(a.getString("uri"),a.getString("name"),fingerprint(c,a.getString("uri"),a.getString("name"),progress)));
         long start=s.optLong("startPage",0);
-        if(start>0){Map<String,Long> trusted=new HashMap<>();JSONObject saved=new JSONObject(prefs(c).getString("pageAnchors:"+folder+":"+book,"{}"));Iterator<String> keys=saved.keys();while(keys.hasNext()){String key=keys.next();trusted.put(key,saved.getLong(key));}return RepairPlan.anchored(bookPages(c,folder,book),shots,book,start,trusted,s.optInt("step",1));}
-        return RepairPlan.align(bookPages(c,folder,book),shots,s.optInt("step",1));
+        if(start>0){Map<String,Long> trusted=new HashMap<>();JSONObject saved=new JSONObject(prefs(c).getString("pageAnchors:"+folder+":"+book,"{}"));Iterator<String> keys=saved.keys();while(keys.hasNext()){String key=keys.next();trusted.put(key,saved.getLong(key));}return RepairPlan.anchored(bookPages(c,folder,book,progress),shots,book,start,trusted,s.optInt("step",1));}
+        return RepairPlan.align(bookPages(c,folder,book,progress),shots,s.optInt("step",1));
     }
     static void cancel(Context c){JSONObject s=session(c);prefs(c).edit().remove(PageStart.key(s.optString("folder"),s.optString("book"))).remove("repairSession").commit();}
     static String target(String book,long number,String original){int dot=original.lastIndexOf('.');return book+"_"+String.format(Locale.ROOT,"%03d",number)+(dot<0?".png":original.substring(dot));}

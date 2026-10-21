@@ -13,6 +13,7 @@ final class RepairOverlay {
     final Context context;final WindowManager windows;final Handler main=new Handler(Looper.getMainLooper());
     LinearLayout panel;TextView status,caption;Button apply;ImageView image;Bitmap bitmap;
     String folder,book;RepairPlan plan;boolean busy;int generation,index;
+    ProgressBar progressBar;TextView progressText;Button cancelCheck;AnalysisProgress analysis;
     RepairOverlay(Context c){context=c;windows=c.getSystemService(WindowManager.class);}
     int dp(int n){return Math.round(n*context.getResources().getDisplayMetrics().density);}
     Button button(LinearLayout row,String title,Runnable action){Button b=new Button(context);b.setText(title);b.setTextSize(11);row.addView(b,new LinearLayout.LayoutParams(0,dp(44),1));b.setOnClickListener(v->{if(!busy)action.run();});return b;}
@@ -24,7 +25,10 @@ final class RepairOverlay {
         panel=new LinearLayout(context);panel.setOrientation(1);panel.setPadding(dp(12),dp(8),dp(12),dp(8));panel.setBackgroundColor(0xfff2f5ee);
         TextView title=new TextView(context);title.setText("중복 검사 / 겹치는 구간 재캡처");title.setTextColor(0xff20392e);title.setTextSize(16);panel.addView(title);
         status=new TextView(context);status.setTextColor(0xff20392e);status.setTextSize(12);status.setText("재캡처 시작 → 빠진 구간 앞뒤의 기존 페이지까지 순서대로 겹쳐 캡처 → 종료·분석 → 제안 확인 후 적용\n상주창의 시작 페이지를 지정하면 실제 페이지 기준과 중복을 함께 분석합니다. 페이지 숫자를 읽는 기능은 아닙니다. 같은 화면 크기로 캡처하세요.\n"+CaptureRepair.label(context));
-        ScrollView scroll=new ScrollView(context);scroll.addView(status);panel.addView(scroll,new LinearLayout.LayoutParams(-1,dp(130)));
+        ScrollView scroll=new ScrollView(context);scroll.addView(status);panel.addView(scroll,new LinearLayout.LayoutParams(-1,dp(100)));
+        progressBar=new ProgressBar(context,null,android.R.attr.progressBarStyleHorizontal);panel.addView(progressBar,new LinearLayout.LayoutParams(-1,dp(8)));
+        progressText=new TextView(context);progressText.setTextSize(12);progressText.setTextColor(0xff20392e);progressText.setText("검사를 시작하면 진행 상황이 표시됩니다");panel.addView(progressText);
+        cancelCheck=new Button(context);cancelCheck.setText("검사 취소");cancelCheck.setEnabled(false);panel.addView(cancelCheck,new LinearLayout.LayoutParams(-1,dp(40)));cancelCheck.setOnClickListener(v->{if(analysis!=null){analysis.cancelled.set(true);cancelCheck.setEnabled(false);cancelCheck.setText("취소 중…");}});
         LinearLayout first=row();button(first,"재캡처 시작/추가",()->work(0));button(first,"종료·분석",()->work(1));
         LinearLayout second=row();button(second,"기존 중복 검사",()->work(2));button(second,"취소·파일보관",()->work(3));
         image=new ImageView(context);image.setScaleType(ImageView.ScaleType.FIT_CENTER);image.setContentDescription("적용될 이미지 순서 미리보기");panel.addView(image,new LinearLayout.LayoutParams(-1,dp(110)));
@@ -38,19 +42,28 @@ final class RepairOverlay {
     void confirm(){if(plan==null)return;status.setText(plan.summary+"\n\n적용 중에는 캡처를 잠시 멈추세요. 중복·교체된 원본은 __backup_ 파일로 남습니다. 아래 버튼을 한 번 더 누르면 적용합니다.");apply.setText("확인: 보관 후 적용");apply.setOnClickListener(v->{if(!busy)work(4);});}
     void work(int action){
         if(busy)return;busy=true;apply.setEnabled(false);status.setText("처리 중… 이미지 수에 따라 시간이 걸릴 수 있습니다. 적용 중에는 캡처를 멈춰 주세요.");final int token=generation;
+        final boolean checking=action==1||action==2;
+        progressBar.setIndeterminate(true);progressText.setText(checking?"파일 목록을 읽고 있습니다…":"처리 중…");cancelCheck.setText("검사 취소");cancelCheck.setEnabled(checking);
+        final AnalysisProgress tracker=new AnalysisProgress(0,(done,total,file,matches)->main.post(()->{
+            if(panel==null||generation!=token||!busy)return;
+            progressBar.setIndeterminate(total==0);progressBar.setMax(Math.max(1,total));progressBar.setProgress(done);
+            progressText.setText(done+" / "+total+"장 · "+(total==0?0:(int)(100L*done/total))+"% · 동일 이미지 "+matches+"장\n"+file);
+        }));analysis=checking?tracker:null;
         IO.execute(()->{
             String message;
             try{synchronized(WatchService.FILE_LOCK){
+                if(checking){tracker.check();int total=0;for(CaptureRepair.Doc d:CaptureRepair.docs(context,folder))if(NamePolicy.number(book,d.name)>0)total++;
+                    if(action==1){org.json.JSONArray shots=CaptureRepair.session(context).optJSONArray("shots");if(shots!=null)total+=shots.length();}tracker.total=total;tracker.before("이미지 비교 시작");}
                 WatchService watch=WatchService.live;
                 if(action!=3&&action!=5&&watch!=null&&!watch.pending.isEmpty())throw new IllegalStateException("새 이미지 정리 중입니다. 잠시 기다린 뒤 다시 누르세요");
                 if(action==0){if(watch==null||watch.known==null)throw new IllegalStateException("감시를 시작하고 준비가 끝난 뒤 다시 누르세요");CaptureRepair.begin(context,folder,book);plan=null;message="재캡처 시작. 기존 앞쪽 페이지부터 빠진 구간을 지나 기존 뒤쪽 페이지까지 순서대로 캡처하세요.";}
-                else if(action==1){plan=CaptureRepair.finish(context,folder,book);message=plan.summary;}
-                else if(action==2){if(!CaptureRepair.session(context).optString("folder").isEmpty())throw new IllegalStateException("재캡처 묶음을 적용하거나 취소·보관한 뒤 기존 중복 검사하세요");plan=RepairPlan.dedupe(CaptureRepair.bookPages(context,folder,book),book);message=plan.summary;}
+                else if(action==1){plan=CaptureRepair.finish(context,folder,book,tracker);tracker.check();message=plan.summary;}
+                else if(action==2){if(!CaptureRepair.session(context).optString("folder").isEmpty())throw new IllegalStateException("재캡처 묶음을 적용하거나 취소·보관한 뒤 기존 중복 검사하세요");plan=RepairPlan.dedupe(CaptureRepair.bookPages(context,folder,book,tracker),book);tracker.check();message=plan.summary;}
                 else if(action==3){CaptureRepair.cancel(context);plan=null;message="재캡처를 취소했습니다. 이미 받은 __recap_ 파일은 삭제하지 않고 남겼습니다.";}
                 else if(action==4){if(plan==null)throw new IllegalStateException("먼저 분석하세요");CaptureRepair.apply(context,folder,book,plan);plan=null;message="보정 완료. 중복·교체 원본은 __backup_ 파일로 보관했습니다. 다음 캡처를 진행하세요.";}
                 else {CaptureRepair.recover(context,folder);plan=null;message="중단된 작업의 파일명을 복구했습니다.";}
             }}catch(Exception e){plan=null;message=e.getMessage()==null?"처리하지 못했습니다. 원본 파일을 확인하세요":e.getMessage();}
-            final String result=message;main.post(()->{busy=false;if(panel==null||token!=generation)return;status.setText(result);apply.setText("제안 적용(원본보관)");apply.setOnClickListener(v->{if(!busy)confirm();});apply.setEnabled(plan!=null);index=0;if(plan!=null){while(index+1<plan.after.size()&&index<plan.before.size()&&plan.after.get(index).uri.equals(plan.before.get(index).uri))index++;thumbnail();}else clearImage();});
+            final String result=message;main.post(()->{busy=false;analysis=null;if(panel==null||token!=generation)return;progressBar.setIndeterminate(false);cancelCheck.setEnabled(false);if(checking&&plan!=null)progressText.setText(tracker.done+" / "+tracker.total+"장 · 검사 완료 · 동일 이미지 "+tracker.matches+"장");else if(checking)progressText.setText(tracker.done+" / "+tracker.total+"장 · "+(tracker.cancelled.get()?"취소됨":"검사 중단"));else progressText.setText("처리 완료");status.setText(result);apply.setText("제안 적용(원본보관)");apply.setOnClickListener(v->{if(!busy)confirm();});apply.setEnabled(plan!=null);index=0;if(plan!=null){while(index+1<plan.after.size()&&index<plan.before.size()&&plan.after.get(index).uri.equals(plan.before.get(index).uri))index++;thumbnail();}else clearImage();});
         });
     }
     void thumbnail(){
@@ -58,6 +71,6 @@ final class RepairOverlay {
         IO.execute(()->{Bitmap decoded=null;try{BitmapFactory.Options b=new BitmapFactory.Options();b.inJustDecodeBounds=true;try(InputStream in=context.getContentResolver().openInputStream(android.net.Uri.parse(page.uri))){BitmapFactory.decodeStream(in,null,b);}b.inJustDecodeBounds=false;b.inSampleSize=1;while(b.outWidth/b.inSampleSize>900||b.outHeight/b.inSampleSize>900)b.inSampleSize*=2;try(InputStream in=context.getContentResolver().openInputStream(android.net.Uri.parse(page.uri))){decoded=BitmapFactory.decodeStream(in,null,b);}}catch(Exception ignored){}final Bitmap picture=decoded;main.post(()->{if(panel==null||token!=generation||which!=index){if(picture!=null)picture.recycle();return;}clearImage();bitmap=picture;image.setImageBitmap(picture);});});
     }
     void clearImage(){if(image!=null)image.setImageDrawable(null);if(bitmap!=null){bitmap.recycle();bitmap=null;}}
-    void close(){generation++;if(panel!=null){try{windows.removeView(panel);}catch(RuntimeException ignored){}panel=null;}clearImage();}
+    void close(){if(analysis!=null)analysis.cancelled.set(true);generation++;if(panel!=null){try{windows.removeView(panel);}catch(RuntimeException ignored){}panel=null;}clearImage();}
     void toast(String s){Toast.makeText(context,s,Toast.LENGTH_LONG).show();}
 }
