@@ -35,22 +35,6 @@ final class FloatingCounter {
         number=new TextView(context);number.setText("준비 중");number.setTextColor(Color.WHITE);number.setTextSize(22);number.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
         correction=new TextView(context);correction.setTextColor(0xffc4d8c8);correction.setTextSize(10);
         content.addView(label);content.addView(number);content.addView(correction);controls.addView(content);
-        Button capture=new Button(context);capture.setText("캡처");capture.setContentDescription("등록된 밀리 캡처 버튼 한 번 누르기");
-        controls.addView(capture,new LinearLayout.LayoutParams(dp(72),dp(48)));
-        capture.setOnClickListener(v->{
-            if(!MillieClickService.ready()){MillieClickService.message(context,"앱에서 밀리 캡처 접근성을 먼저 켜세요");return;}
-            hide();
-            main.postDelayed(()->{
-                if(destroyed)return;
-                MillieClickService.press(context,()->main.postDelayed(()->{
-                    if(!destroyed&&context.getSharedPreferences("watch",0).getBoolean("floating",true)){
-                        show(book);update(WatchService.displayNumber(),WatchService.displayPending());
-                    }
-                },160));
-            },80);
-        });
-        Button position=new Button(context);position.setText("위치");position.setContentDescription("캡처 터치 위치 등록");controls.addView(position,new LinearLayout.LayoutParams(dp(64),dp(48)));
-        position.setOnClickListener(v->TapTarget.show(context));
         LinearLayout tools=new LinearLayout(context);
         Button latest=new Button(context);latest.setText("마지막 이미지 / 삭제");latest.setTextSize(12);tools.addView(latest,new LinearLayout.LayoutParams(0,dp(44),1));root.addView(tools);
         latest.setOnClickListener(v->preview.show(book));
@@ -129,5 +113,5 @@ final class FloatingCounter {
     }
     void closeAdjustment(){if(adjustmentPanel!=null){context.getSystemService(android.view.inputmethod.InputMethodManager.class).hideSoftInputFromWindow(adjustmentPanel.getWindowToken(),0);try{windows.removeView(adjustmentPanel);}catch(RuntimeException ignored){}adjustmentPanel=null;}}
     void hide(){closeAdjustment();visible=false;if(root!=null){try{windows.removeView(root);}catch(RuntimeException ignored){}root=null;}}
-    void destroy(){repair.close();preview.close();TapTarget.close();destroyed=true;main.removeCallbacksAndMessages(null);hide();}
+    void destroy(){repair.close();preview.close();destroyed=true;main.removeCallbacksAndMessages(null);hide();}
 }

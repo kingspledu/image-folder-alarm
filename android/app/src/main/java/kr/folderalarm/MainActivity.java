@@ -21,8 +21,7 @@ public class MainActivity extends Activity {
         if(startButton!=null) startButton.setEnabled(!running);
         if(stopButton!=null) stopButton.setEnabled(running);
         if(bookName!=null) bookName.setEnabled(!running);
-        status.setText((running?"● 감시 켜짐\n":"○ 감시 꺼짐\n") + "폴더: " + p.getString("folder", "선택하지 않음") + "\n\n" + p.getString("status", "감시 중지")
-            + "\n밀리 버튼 터치: " + (MillieClickService.ready()?"접근성 연결됨":"접근성 꺼짐") + " · X " + p.getInt("tapX",-1) + ", Y " + p.getInt("tapY",-1) + "\n\n" + Alerts.state(this) + "\n" + p.getString("lastEvent", "최근 이미지 감지 기록 없음") + "\n\n새 이미지 이름: 책이름_001.확장자\n기존 파일은 변경하지 않습니다. 하위 폴더는 제외합니다.\n변경 이벤트와 0.2초 주기로 감지하며 절전 중에는 지연될 수 있습니다.");
+        status.setText((running?"● 감시 켜짐\n":"○ 감시 꺼짐\n")+"폴더: "+p.getString("folder","선택하지 않음")+"\n\n"+p.getString("status","감시 중지")+"\n\n"+Alerts.state(this)+"\n"+p.getString("lastEvent","최근 이미지 감지 기록 없음")+"\n\n밀리 캡처 버튼은 직접 누르세요. 새 이미지 감지·파일명 정리·상주창·미리보기·삭제·페이지 보정·ZIP 저장을 지원합니다. 접근성 기능은 사용하지 않습니다.");
     }
     public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -57,10 +56,6 @@ public class MainActivity extends Activity {
         });
         stopButton=button(layout, "감시 중지", () -> { stopService(new Intent(this, WatchService.class)); getSharedPreferences("watch", 0).edit().putString("status", "감시 중지").apply(); refresh(); });
         button(layout,"마지막 번호 이미지 한 장 삭제",()->DeleteLast.ask(this,bookName.getText().toString().trim()));
-        button(layout,"밀리 캡처 접근성 켜기",()->new AlertDialog.Builder(this).setTitle("밀리 버튼 터치 허용")
-            .setMessage("상주창에서 캡처를 누를 때만 밀리 앱의 등록된 위치를 한 번 터치합니다. 접근성으로 현재 앱이 밀리인지 확인하며, 책 본문을 저장하거나 전송하지 않습니다. 화면 캡처 권한은 사용하지 않습니다. 설정에서 이미지 폴더 알림 · 밀리 버튼 터치를 직접 켜주세요.")
-            .setPositiveButton("접근성 설정",(d,w)->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))).setNegativeButton("취소",null).show());
-        button(layout,"캡처 X·Y 좌표 직접 수정",()->editTapCoordinates());
         button(layout,"책 캡처 ZIP / Google Drive",()->{
             String book=bookName.getText().toString().trim();if(!NamePolicy.validBook(book)){Toast.makeText(this,"책 이름을 먼저 입력하세요",1).show();return;}
             startActivity(new Intent(this,ExportActivity.class).putExtra("book",book));
@@ -81,20 +76,6 @@ public class MainActivity extends Activity {
             view.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());return insets;
         });
         setContentView(scroll);
-    }
-    void editTapCoordinates(){
-        android.content.SharedPreferences p=getSharedPreferences("watch",0);
-        android.util.DisplayMetrics m=MillieClickService.screen(this);
-        LinearLayout box=new LinearLayout(this);box.setOrientation(1);box.setPadding(32,16,32,16);
-        TextView help=new TextView(this);help.setText("S23 Ultra 현재 화면: "+m.widthPixels+" × "+m.heightPixels+" px\n왼쪽 위가 X=0, Y=0입니다. 상주창의 ‘위치’에서 조준점을 옮겨 등록할 수도 있습니다.");box.addView(help);
-        EditText x=new EditText(this);x.setHint("X (가로 픽셀)");x.setInputType(2);if(p.contains("tapX"))x.setText(String.valueOf(p.getInt("tapX",0)));box.addView(x);
-        EditText y=new EditText(this);y.setHint("Y (세로 픽셀)");y.setInputType(2);if(p.contains("tapY"))y.setText(String.valueOf(p.getInt("tapY",0)));box.addView(y);
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("밀리 캡처 버튼 좌표").setView(box).setPositiveButton("저장",null).setNegativeButton("취소",null).create();
-        dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(b->{try{
-            int tx=Integer.parseInt(x.getText().toString()),ty=Integer.parseInt(y.getText().toString());
-            if(tx<0||ty<0||tx>=m.widthPixels||ty>=m.heightPixels)throw new IllegalArgumentException();
-            p.edit().putInt("tapX",tx).putInt("tapY",ty).putInt("tapW",m.widthPixels).putInt("tapH",m.heightPixels).apply();dialog.dismiss();
-        }catch(Exception e){Toast.makeText(this,"현재 화면 범위 안의 X, Y 숫자를 입력하세요",1).show();}}));dialog.show();
     }
     void overlayPermission(){
         Toast.makeText(this,"다른 앱 위에 표시를 허용한 뒤 앱으로 돌아와 감시 시작을 누르세요",Toast.LENGTH_LONG).show();
