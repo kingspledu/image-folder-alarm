@@ -61,6 +61,10 @@ public class MainActivity extends Activity {
             .setMessage("상주창에서 캡처를 누를 때만 밀리 앱의 등록된 위치를 한 번 터치합니다. 접근성으로 현재 앱이 밀리인지 확인하며, 책 본문을 저장하거나 전송하지 않습니다. 화면 캡처 권한은 사용하지 않습니다. 설정에서 이미지 폴더 알림 · 밀리 버튼 터치를 직접 켜주세요.")
             .setPositiveButton("접근성 설정",(d,w)->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))).setNegativeButton("취소",null).show());
         button(layout,"캡처 X·Y 좌표 직접 수정",()->editTapCoordinates());
+        button(layout,"책 캡처 ZIP / Google Drive",()->{
+            String book=bookName.getText().toString().trim();if(!NamePolicy.validBook(book)){Toast.makeText(this,"책 이름을 먼저 입력하세요",1).show();return;}
+            startActivity(new Intent(this,ExportActivity.class).putExtra("book",book));
+        });
         button(layout,"알림 테스트",()->{
             if(android.os.Build.VERSION.SDK_INT>=33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=0){
                 requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},12);return;
